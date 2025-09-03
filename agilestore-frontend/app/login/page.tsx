@@ -1,57 +1,81 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
-import { Eye, EyeOff, Mail, Lock, ArrowLeft, Shield, CheckCircle } from "lucide-react"
-import { loginCustomer, setCustomerToken } from "@/lib/api"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import {
+  Eye,
+  EyeOff,
+  Mail,
+  Lock,
+  ArrowLeft,
+  Shield,
+  CheckCircle,
+} from "lucide-react";
+import { loginCustomer, setCustomerToken } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [showPassword, setShowPassword] = useState(false)
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [remember, setRemember] = useState(true) // opsional
-  const [isLoading, setIsLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const router = useRouter();
+  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true); // opsional
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMsg(null)
-    setIsLoading(true)
+    e.preventDefault();
+    setErrorMsg(null);
+    setIsLoading(true);
 
     try {
-      const res = await loginCustomer({ email: email.trim(), password })
+      const res = await loginCustomer({ email: email.trim(), password });
       /**
        * loginCustomer sudah menyimpan token ke localStorage.
        * Opsi: kalau "remember me" dimatikan, hapus token saat tab ditutup.
        */
       if (!remember && typeof window !== "undefined") {
         // Pindahkan token ke sessionStorage agar hilang saat tab ditutup
-        const token = localStorage.getItem("customer_access_token")
+        const token = localStorage.getItem("customer_access_token");
         if (token) {
-          sessionStorage.setItem("customer_access_token", token)
-          localStorage.removeItem("customer_access_token")
+          sessionStorage.setItem("customer_access_token", token);
+          localStorage.removeItem("customer_access_token");
           // override helper agar sesi ini pakai sessionStorage (sederhana)
-          setCustomerToken(sessionStorage.getItem("customer_access_token"))
+          setCustomerToken(sessionStorage.getItem("customer_access_token"));
         }
       }
 
       // Redirect setelah login sukses
-      router.push("/")
+      router.push("/");
+      toast({ title: "Login Success" });
     } catch (err: any) {
-      setErrorMsg(err?.message || "Login failed. Please check your credentials.")
+      setErrorMsg(
+        "Login failed. Please check your credentials."
+      );
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: "Please check yout credentials.",
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 flex items-center justify-center p-4">
@@ -78,8 +102,12 @@ export default function LoginPage() {
             </div>
 
             <div className="text-center space-y-2">
-              <CardTitle className="text-2xl font-serif font-bold text-foreground">Welcome Back</CardTitle>
-              <CardDescription className="text-muted-foreground">Sign in to your Agile Store account</CardDescription>
+              <CardTitle className="text-2xl font-serif font-bold text-foreground">
+                Welcome Back
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Sign in to your Agile Store account
+              </CardDescription>
             </div>
           </CardHeader>
 
@@ -87,11 +115,14 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Email Field */}
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-foreground">
+                <Label
+                  htmlFor="email"
+                  className="text-sm font-medium text-foreground"
+                >
                   Email Address
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
                     type="email"
@@ -106,11 +137,14 @@ export default function LoginPage() {
 
               {/* Password Field */}
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-foreground">
+                <Label
+                  htmlFor="password"
+                  className="text-sm font-medium text-foreground"
+                >
                   Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -125,7 +159,11 @@ export default function LoginPage() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -140,18 +178,26 @@ export default function LoginPage() {
                     onChange={(e) => setRemember(e.target.checked)}
                     className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                   />
-                  <Label htmlFor="remember" className="text-sm text-muted-foreground">
+                  <Label
+                    htmlFor="remember"
+                    className="text-sm text-muted-foreground"
+                  >
                     Remember me
                   </Label>
                 </div>
-                <Link href="/forgot-password" className="text-sm text-primary hover:text-primary/80 transition-colors">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:text-primary/80 transition-colors"
+                >
                   Forgot password?
                 </Link>
               </div>
 
               {/* Error */}
               {errorMsg && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">{errorMsg}</p>
+                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">
+                  {errorMsg}
+                </p>
               )}
 
               {/* Login Button */}
@@ -170,13 +216,18 @@ export default function LoginPage() {
                 <Separator className="w-full" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or continue with
+                </span>
               </div>
             </div>
 
             {/* Social Login */}
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-12 border-border hover:bg-muted/50 bg-transparent">
+              <Button
+                variant="outline"
+                className="h-12 border-border hover:bg-muted/50 bg-transparent"
+              >
                 <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -197,8 +248,15 @@ export default function LoginPage() {
                 </svg>
                 Google
               </Button>
-              <Button variant="outline" className="h-12 border-border hover:bg-muted/50 bg-transparent">
-                <svg className="h-4 w-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+              <Button
+                variant="outline"
+                className="h-12 border-border hover:bg-muted/50 bg-transparent"
+              >
+                <svg
+                  className="h-4 w-4 mr-2"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                 </svg>
                 Facebook
@@ -209,7 +267,10 @@ export default function LoginPage() {
           <CardFooter className="pt-6">
             <div className="text-center text-sm text-muted-foreground">
               Don't have an account?{" "}
-              <Link href="/register" className="text-primary hover:text-primary/80 font-medium transition-colors">
+              <Link
+                href="/register"
+                className="text-primary hover:text-primary/80 font-medium transition-colors"
+              >
                 Create account
               </Link>
             </div>
@@ -229,5 +290,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

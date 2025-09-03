@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Menu, X, Search, ShoppingCart } from "lucide-react"
+import AuthButtons from "./AuthButtons"
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -49,16 +50,7 @@ export function Header() {
             <Button variant="ghost" size="sm">
               <ShoppingCart className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/login">Login</Link>
-            </Button>
-            <Button
-              size="sm"
-              className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
-              asChild
-            >
-              <Link href="/register">Register</Link>
-            </Button>
+            <AuthButtons />
           </div>
 
           {/* Mobile Menu Button */}

@@ -151,7 +151,7 @@ export default function RegisterPage() {
                     Full Name
                   </Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <User className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="fullName"
                       type="text"
@@ -176,7 +176,7 @@ export default function RegisterPage() {
                   Email Address
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
                     type="email"
@@ -198,11 +198,11 @@ export default function RegisterPage() {
                   Phone Number
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="0813xxxx"
+                    placeholder="+62812345678"
                     value={formData.phone}
                     onChange={(e) => handleInputChange("phone", e.target.value)}
                     className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -212,7 +212,7 @@ export default function RegisterPage() {
               </div>
 
               {/* Company Field */}
-              <div className="space-y-2">
+              {/* <div className="space-y-2">
                 <Label
                   htmlFor="company"
                   className="text-sm font-medium text-foreground"
@@ -220,7 +220,7 @@ export default function RegisterPage() {
                   Company Name
                 </Label>
                 <div className="relative">
-                  <Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Building className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="company"
                     type="text"
@@ -232,7 +232,7 @@ export default function RegisterPage() {
                     className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
                   />
                 </div>
-              </div>
+              </div> */}
 
               {/* Password Fields */}
               <div className="space-y-2">
@@ -243,7 +243,7 @@ export default function RegisterPage() {
                   Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -258,7 +258,7 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
+                    className="absolute right-3 top-4 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -277,7 +277,7 @@ export default function RegisterPage() {
                   Confirm Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
@@ -292,7 +292,7 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
+                    className="absolute right-3 top-4 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="h-4 w-4" />

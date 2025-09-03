@@ -1,13 +1,18 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import {
   Package,
   Calendar,
@@ -28,16 +33,16 @@ import {
   MessageCircle,
   Phone,
   Mail,
-} from "lucide-react"
-
-// Mock user data
-const mockUser = {
-  name: "John Doe",
-  email: "john.doe@example.com",
-  phone: "+62 812 3456 7890",
-  company: "PT. Example Company",
-  joinDate: "2024-01-15",
-}
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  getCustomerMe,
+  logoutCustomer,
+  updateCustomerProfile,
+  type CustomerUser,
+} from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { toast } from "@/hooks/use-toast";
 
 // Mock subscription data
 const mockSubscriptions = [
@@ -65,7 +70,7 @@ const mockSubscriptions = [
     autoRenew: false,
     appUrl: "https://absenfast.com/login",
   },
-]
+];
 
 // Mock invoice data
 const mockInvoices = [
@@ -96,7 +101,7 @@ const mockInvoices = [
     status: "pending",
     downloadUrl: "#",
   },
-]
+];
 
 // FAQ data
 const faqData = [
@@ -125,68 +130,106 @@ const faqData = [
     answer:
       "If a payment fails, you'll receive an email notification. You have 7 days to update your payment method before the service is suspended.",
   },
-]
+];
 
-type ActiveSection = "dashboard" | "products" | "billing" | "renewal" | "profile" | "support"
+type ActiveSection =
+  | "dashboard"
+  | "products"
+  | "billing"
+  | "renewal"
+  | "profile"
+  | "support";
 
 export default function MyAccountPage() {
-  const [user, setUser] = useState(mockUser)
-  const [subscriptions, setSubscriptions] = useState(mockSubscriptions)
-  const [invoices, setInvoices] = useState(mockInvoices)
-  const [activeSection, setActiveSection] = useState<ActiveSection>("dashboard")
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const router = useRouter();
+
+  const [user, setUser] = useState<CustomerUser | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // form state (diisi dari user real)
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
+
+  const [subscriptions, setSubscriptions] = useState(mockSubscriptions);
+  const [invoices, setInvoices] = useState(mockInvoices);
+  const [activeSection, setActiveSection] =
+    useState<ActiveSection>("dashboard");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
     whatsapp: true,
     renewal: true,
     updates: false,
-  })
+  });
+
+  // fetch user
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const me = await getCustomerMe();
+        setUser(me);
+        setFullName(me.full_name || "");
+        setEmail(me.email || "");
+        setPhone(me.phone || "");
+        setCompany(me.company || "");
+      } catch (e) {
+        // kemungkinan 401 → balik ke login
+        router.push("/login");
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+    load();
+  }, [router]);
 
   const formatPrice = (price: number) => {
-    return `IDR ${price.toLocaleString()}`
-  }
+    return `IDR ${price.toLocaleString()}`;
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
-    })
-  }
+    });
+  };
 
   const getDaysUntilExpiry = (endDate: string) => {
-    const today = new Date()
-    const expiry = new Date(endDate)
-    const diffTime = expiry.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays
-  }
+    const today = new Date();
+    const expiry = new Date(endDate);
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-green-500 text-white">Active</Badge>
+        return <Badge className="bg-green-500 text-white">Active</Badge>;
       case "expired":
-        return <Badge className="bg-red-500 text-white">Expired</Badge>
+        return <Badge className="bg-red-500 text-white">Expired</Badge>;
       case "trial":
-        return <Badge className="bg-blue-500 text-white">Trial</Badge>
+        return <Badge className="bg-blue-500 text-white">Trial</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>
+        return <Badge variant="outline">{status}</Badge>;
     }
-  }
+  };
 
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge className="bg-green-500 text-white">Paid</Badge>
+        return <Badge className="bg-green-500 text-white">Paid</Badge>;
       case "pending":
-        return <Badge className="bg-yellow-500 text-white">Pending</Badge>
+        return <Badge className="bg-yellow-500 text-white">Pending</Badge>;
       case "failed":
-        return <Badge className="bg-red-500 text-white">Failed</Badge>
+        return <Badge className="bg-red-500 text-white">Failed</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>
+        return <Badge variant="outline">{status}</Badge>;
     }
-  }
+  };
 
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
@@ -195,12 +238,87 @@ export default function MyAccountPage() {
     { id: "renewal", label: "Renewal & Upgrade", icon: RefreshCw },
     { id: "profile", label: "Profile & Account Settings", icon: User },
     { id: "support", label: "Support & Help Center", icon: HelpCircle },
-  ]
+  ];
 
-  const activeProducts = subscriptions.filter((s) => s.status === "active")
+  const activeProducts = subscriptions.filter((s) => s.status === "active");
   const nextRenewal =
-    activeProducts.length > 0 ? Math.min(...activeProducts.map((s) => getDaysUntilExpiry(s.endDate))) : 0
-  const outstandingInvoices = invoices.filter((i) => i.status === "pending").length
+    activeProducts.length > 0
+      ? Math.min(...activeProducts.map((s) => getDaysUntilExpiry(s.endDate)))
+      : 0;
+  const outstandingInvoices = invoices.filter(
+    (i) => i.status === "pending"
+  ).length;
+
+  // actions (save user, logout, dll)
+  const onSaveProfile = async () => {
+    if (!user) return;
+    setSavingProfile(true);
+
+    try {
+      const res = await updateCustomerProfile({
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        company: company.trim() || null,
+      });
+      // sinkronkan state dari backend (pastikan selalu pakai data terbaru)
+      setUser(res.data);
+      toast({ title: "Saved", description: "Profile updated successfully." });
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        variant: "destructive",
+        title: "Failed to save",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const onLogout = async () => {
+    try {
+      await logoutCustomer();
+      toast({ title: "Signed out", description: "See you again!" });
+    } finally {
+      router.push("/login");
+    }
+  };
+
+  // ===== Loading skeleton untuk seluruh halaman =====
+  if (loadingUser) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="bg-white border-b border-slate-200 px-4 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                Agile Store
+              </h1>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600">My Account</span>
+            </div>
+            <Button
+              variant="ghost"
+              className="text-slate-600 cursor-pointer"
+              onClick={onLogout}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <Skeleton className="h-64 rounded-xl bg-muted" />
+          <div className="lg:col-span-3 space-y-4">
+            <Skeleton className="h-24 rounded-xl bg-muted" />
+            <Skeleton className="h-64 rounded-xl bg-muted" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (activeSection) {
@@ -208,8 +326,12 @@ export default function MyAccountPage() {
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Welcome back, {user.name}!</h2>
-              <p className="text-slate-600">Here's an overview of your account and subscriptions.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                Welcome back{user?.full_name ? `, ${user.full_name}` : ""}!
+              </h2>
+              <p className="text-slate-600">
+                Here's an overview of your account and subscriptions.
+              </p>
             </div>
 
             {/* Summary Cards */}
@@ -221,7 +343,9 @@ export default function MyAccountPage() {
                       <CheckCircle className="h-6 w-6 text-green-500" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-slate-900">{activeProducts.length}</p>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {activeProducts.length}
+                      </p>
                       <p className="text-sm text-slate-600">Active Products</p>
                     </div>
                   </div>
@@ -235,8 +359,12 @@ export default function MyAccountPage() {
                       <Calendar className="h-6 w-6 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-slate-900">{nextRenewal}</p>
-                      <p className="text-sm text-slate-600">Days Until Renewal</p>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {nextRenewal}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        Days Until Renewal
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -249,8 +377,12 @@ export default function MyAccountPage() {
                       <AlertCircle className="h-6 w-6 text-red-500" />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-slate-900">{outstandingInvoices}</p>
-                      <p className="text-sm text-slate-600">Outstanding Invoice</p>
+                      <p className="text-2xl font-bold text-slate-900">
+                        {outstandingInvoices}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        Outstanding Invoice
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -264,29 +396,46 @@ export default function MyAccountPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {activeProducts.map((product) => (
-                  <div key={product.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                  <div
+                    key={product.id}
+                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
+                  >
                     <div>
-                      <h4 className="font-semibold text-slate-900">{product.productName}</h4>
-                      <p className="text-sm text-slate-600">{product.package} Plan</p>
+                      <h4 className="font-semibold text-slate-900">
+                        {product.productName}
+                      </h4>
+                      <p className="text-sm text-slate-600">
+                        {product.package} Plan
+                      </p>
                     </div>
                     <div className="text-right">
                       {getStatusBadge(product.status)}
-                      <p className="text-sm text-slate-600 mt-1">Expires: {formatDate(product.endDate)}</p>
+                      <p className="text-sm text-slate-600 mt-1">
+                        Expires: {formatDate(product.endDate)}
+                      </p>
                     </div>
                   </div>
                 ))}
-                {activeProducts.length === 0 && <p className="text-slate-600 text-center py-4">No active products</p>}
+                {activeProducts.length === 0 && (
+                  <p className="text-slate-600 text-center py-4">
+                    No active products
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
-        )
+        );
 
       case "products":
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">My Products</h2>
-              <p className="text-slate-600">Manage and access your purchased products.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                My Products
+              </h2>
+              <p className="text-slate-600">
+                Manage and access your purchased products.
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -295,23 +444,31 @@ export default function MyAccountPage() {
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-xl font-semibold text-slate-900">{product.productName}</h3>
+                        <h3 className="text-xl font-semibold text-slate-900">
+                          {product.productName}
+                        </h3>
                         <p className="text-slate-600">{product.package} Plan</p>
                       </div>
                       <div className="text-right">
                         {getStatusBadge(product.status)}
-                        <p className="text-lg font-bold text-slate-900 mt-1">{formatPrice(product.price)}</p>
+                        <p className="text-lg font-bold text-slate-900 mt-1">
+                          {formatPrice(product.price)}
+                        </p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
                         <p className="text-sm text-slate-600">Start Date</p>
-                        <p className="font-medium">{formatDate(product.startDate)}</p>
+                        <p className="font-medium">
+                          {formatDate(product.startDate)}
+                        </p>
                       </div>
                       <div>
                         <p className="text-sm text-slate-600">End Date</p>
-                        <p className="font-medium">{formatDate(product.endDate)}</p>
+                        <p className="font-medium">
+                          {formatDate(product.endDate)}
+                        </p>
                       </div>
                       <div>
                         <p className="text-sm text-slate-600">Duration</p>
@@ -329,7 +486,9 @@ export default function MyAccountPage() {
                           <div className="flex gap-2">
                             <Button
                               className="bg-blue-600 hover:bg-blue-700"
-                              onClick={() => window.open(product.appUrl, "_blank")}
+                              onClick={() =>
+                                window.open(product.appUrl, "_blank")
+                              }
                             >
                               <ExternalLink className="h-4 w-4 mr-2" />
                               Open App
@@ -370,14 +529,18 @@ export default function MyAccountPage() {
               ))}
             </div>
           </div>
-        )
+        );
 
       case "billing":
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Billing & Invoices</h2>
-              <p className="text-slate-600">View and download your invoices and payment history.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                Billing & Invoices
+              </h2>
+              <p className="text-slate-600">
+                View and download your invoices and payment history.
+              </p>
             </div>
 
             <Card className="border-0 shadow-md">
@@ -393,15 +556,21 @@ export default function MyAccountPage() {
                           <FileText className="h-5 w-5 text-slate-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">{invoice.id}</p>
+                          <p className="font-medium text-slate-900">
+                            {invoice.id}
+                          </p>
                           <p className="text-sm text-slate-600">
                             {invoice.product} - {invoice.package}
                           </p>
-                          <p className="text-sm text-slate-500">{formatDate(invoice.date)}</p>
+                          <p className="text-sm text-slate-500">
+                            {formatDate(invoice.date)}
+                          </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-slate-900">{formatPrice(invoice.amount)}</p>
+                        <p className="font-bold text-slate-900">
+                          {formatPrice(invoice.amount)}
+                        </p>
                         <div className="flex items-center gap-2 mt-1">
                           {getPaymentStatusBadge(invoice.status)}
                           <Button variant="ghost" size="sm">
@@ -415,14 +584,18 @@ export default function MyAccountPage() {
               </CardContent>
             </Card>
           </div>
-        )
+        );
 
       case "renewal":
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Renewal & Upgrade</h2>
-              <p className="text-slate-600">Renew your subscriptions or upgrade to higher plans.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                Renewal & Upgrade
+              </h2>
+              <p className="text-slate-600">
+                Renew your subscriptions or upgrade to higher plans.
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -431,7 +604,9 @@ export default function MyAccountPage() {
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold text-slate-900">{product.productName}</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">
+                          {product.productName}
+                        </h3>
                         <p className="text-slate-600">{product.package} Plan</p>
                         <p className="text-sm text-slate-500 mt-1">
                           {product.status === "active"
@@ -455,14 +630,18 @@ export default function MyAccountPage() {
               ))}
             </div>
           </div>
-        )
+        );
 
       case "profile":
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Profile & Account Settings</h2>
-              <p className="text-slate-600">Manage your personal information and account preferences.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                Profile & Account Settings
+              </h2>
+              <p className="text-slate-600">
+                Manage your personal information and account preferences.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -474,21 +653,48 @@ export default function MyAccountPage() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">Full Name</Label>
-                    <Input id="name" defaultValue={user.name} />
+                    <Input
+                      id="name"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
-                    <Input id="email" type="email" defaultValue={user.email} />
+                    <Input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone/WhatsApp</Label>
-                    <Input id="phone" defaultValue={user.phone} />
+                    <Input
+                      id="phone"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="company">Company</Label>
-                    <Input id="company" defaultValue={user.company} />
+                    <Input
+                      id="company"
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      placeholder="Enter your company name.. (optional)"
+                    />
                   </div>
-                  <Button className="bg-blue-600 hover:bg-blue-700">Save Changes</Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                    disabled={savingProfile}
+                    onClick={onSaveProfile}
+                  >
+                    {savingProfile ? "Saving..." : "Save Changes"}
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -514,31 +720,52 @@ export default function MyAccountPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">Email Notifications</p>
-                        <p className="text-sm text-slate-600">Receive updates via email</p>
+                        <p className="text-sm text-slate-600">
+                          Receive updates via email
+                        </p>
                       </div>
                       <Switch
                         checked={notifications.email}
-                        onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, email: checked }))}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({
+                            ...prev,
+                            email: checked,
+                          }))
+                        }
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">WhatsApp Notifications</p>
-                        <p className="text-sm text-slate-600">Receive updates via WhatsApp</p>
+                        <p className="text-sm text-slate-600">
+                          Receive updates via WhatsApp
+                        </p>
                       </div>
                       <Switch
                         checked={notifications.whatsapp}
-                        onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, whatsapp: checked }))}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({
+                            ...prev,
+                            whatsapp: checked,
+                          }))
+                        }
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">Renewal Reminders</p>
-                        <p className="text-sm text-slate-600">Get notified before expiry</p>
+                        <p className="text-sm text-slate-600">
+                          Get notified before expiry
+                        </p>
                       </div>
                       <Switch
                         checked={notifications.renewal}
-                        onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, renewal: checked }))}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({
+                            ...prev,
+                            renewal: checked,
+                          }))
+                        }
                       />
                     </div>
                   </CardContent>
@@ -546,14 +773,18 @@ export default function MyAccountPage() {
               </div>
             </div>
           </div>
-        )
+        );
 
       case "support":
         return (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Support & Help Center</h2>
-              <p className="text-slate-600">Get help and find answers to common questions.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                Support & Help Center
+              </h2>
+              <p className="text-slate-600">
+                Get help and find answers to common questions.
+              </p>
             </div>
 
             {/* Contact Support */}
@@ -563,20 +794,35 @@ export default function MyAccountPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent">
+                  <Button
+                    variant="outline"
+                    className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                  >
                     <MessageCircle className="h-6 w-6 text-blue-600" />
                     <span className="font-medium">Live Chat</span>
-                    <span className="text-sm text-slate-600">Available 24/7</span>
+                    <span className="text-sm text-slate-600">
+                      Available 24/7
+                    </span>
                   </Button>
-                  <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent">
+                  <Button
+                    variant="outline"
+                    className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                  >
                     <Mail className="h-6 w-6 text-green-600" />
                     <span className="font-medium">Email Support</span>
-                    <span className="text-sm text-slate-600">support@agilestore.com</span>
+                    <span className="text-sm text-slate-600">
+                      support@agilestore.com
+                    </span>
                   </Button>
-                  <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent">
+                  <Button
+                    variant="outline"
+                    className="h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                  >
                     <Phone className="h-6 w-6 text-purple-600" />
                     <span className="font-medium">Phone Support</span>
-                    <span className="text-sm text-slate-600">+62 812 3456 7890</span>
+                    <span className="text-sm text-slate-600">
+                      +62 812 3456 7890
+                    </span>
                   </Button>
                 </div>
               </CardContent>
@@ -591,8 +837,12 @@ export default function MyAccountPage() {
                 <Accordion type="single" collapsible className="w-full">
                   {faqData.map((faq, index) => (
                     <AccordionItem key={index} value={`item-${index}`}>
-                      <AccordionTrigger className="text-left">{faq.question}</AccordionTrigger>
-                      <AccordionContent className="text-slate-600">{faq.answer}</AccordionContent>
+                      <AccordionTrigger className="text-left">
+                        {faq.question}
+                      </AccordionTrigger>
+                      <AccordionContent className="text-slate-600">
+                        {faq.answer}
+                      </AccordionContent>
                     </AccordionItem>
                   ))}
                 </Accordion>
@@ -622,12 +872,12 @@ export default function MyAccountPage() {
               </CardContent>
             </Card>
           </div>
-        )
+        );
 
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -641,7 +891,11 @@ export default function MyAccountPage() {
             <span className="text-slate-400">|</span>
             <span className="text-slate-600">My Account</span>
           </div>
-          <Button variant="ghost" className="text-slate-600">
+          <Button
+            variant="ghost"
+            className="text-slate-600 cursor-pointer"
+            onClick={onLogout}
+          >
             <LogOut className="h-4 w-4 mr-2" />
             Logout
           </Button>
@@ -656,12 +910,14 @@ export default function MyAccountPage() {
               <CardContent className="p-0">
                 <nav className="space-y-1">
                   {sidebarItems.map((item) => {
-                    const Icon = item.icon
+                    const Icon = item.icon;
                     return (
                       <button
                         key={item.id}
-                        onClick={() => setActiveSection(item.id as ActiveSection)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                        onClick={() =>
+                          setActiveSection(item.id as ActiveSection)
+                        }
+                        className={`w-full cursor-pointer flex items-center gap-3 px-4 py-3 text-left transition-colors ${
                           activeSection === item.id
                             ? "bg-blue-50 text-blue-600 border-r-2 border-blue-600"
                             : "text-slate-600 hover:bg-slate-50"
@@ -670,7 +926,7 @@ export default function MyAccountPage() {
                         <Icon className="h-5 w-5" />
                         <span className="font-medium">{item.label}</span>
                       </button>
-                    )
+                    );
                   })}
                 </nav>
               </CardContent>
@@ -686,22 +942,26 @@ export default function MyAccountPage() {
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-2">
         <div className="flex justify-around">
           {sidebarItems.slice(0, 4).map((item) => {
-            const Icon = item.icon
+            const Icon = item.icon;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id as ActiveSection)}
                 className={`flex flex-col items-center gap-1 py-2 px-3 rounded-lg transition-colors ${
-                  activeSection === item.id ? "bg-blue-50 text-blue-600" : "text-slate-600"
+                  activeSection === item.id
+                    ? "bg-blue-50 text-blue-600"
+                    : "text-slate-600"
                 }`}
               >
                 <Icon className="h-5 w-5" />
-                <span className="text-xs font-medium">{item.label.split(" ")[0]}</span>
+                <span className="text-xs font-medium">
+                  {item.label.split(" ")[0]}
+                </span>
               </button>
-            )
+            );
           })}
         </div>
       </div>
     </div>
-  )
+  );
 }
