@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CustomerAuthController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\Payments\MidtransWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -34,3 +37,14 @@ Route::prefix('customer')->group(function () {
         Route::put('/change-password',  [CustomerAuthController::class, 'changePassword']);
     });
 });
+
+// nanti dipindah ke auth
+    Route::post('/orders', [OrderController::class, 'store']);  // create + snap token
+    Route::get('/orders/{id}', [OrderController::class, 'show']); // detail order
+
+    // Webhook Midtrans
+    Route::post('/midtrans/webhook', [MidtransWebhookController::class, 'handle']);
+
+    // product catalog
+    Route::get('/products', [CatalogController::class, 'products']);
+    Route::get('/products/{product_code}', [CatalogController::class, 'show']);

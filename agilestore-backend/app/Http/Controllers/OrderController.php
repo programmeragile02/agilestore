@@ -114,5 +114,35 @@ class OrderController extends Controller
             ]],
             // opsional: enable payment channel tertentu, callbacks, dll.
         ];
+
+        // Snap token
+        $snapToken = $midtrans->createSnapToken($payload);
+
+        // Simpan snapshot Midtrans
+        $order->midtrans_order_id = $midtransOrderId;
+        $order->snap_token        = $snapToken;
+        $order->save();
+
+        return response()->json([
+            'success'   => true,
+            'message'   => 'Order created',
+            'data'      => [
+                'order_id'   => $order->id,
+                'snap_token' => $snapToken,
+                'total'      => (float) $order->total,
+                'currency'   => $order->currency,
+                'status'     => $order->status,
+            ],
+        ], 201);
+    }
+
+    public function show(string $id)
+    {
+        $order = Order::with('customer')->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $order,
+        ]);
     }
 }

@@ -78,4 +78,12 @@ class Customer extends Authenticatable implements JWTSubject
             ? asset('storage/' . $this->profile_photo)
             : null;
     }
+
+    /**
+     * Hasmany Orders.
+     */
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
+    }
 }

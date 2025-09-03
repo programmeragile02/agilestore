@@ -26,4 +26,9 @@ class MstProductPackage extends Model
     {
         return $this->belongsTo(MstProduct::class, 'product_code', 'product_code');
     }
+
+    public function pricelist()
+    {
+        return $this->hasMany(MstProductPricelistItem::class, 'package_code', 'package_code');
+    }
 }
