@@ -3,7 +3,7 @@
 import type React from "react";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ import { toast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,35 +40,39 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Set flag cookie untuk dibaca middleware (tanpa token)
+  const setAuthCookie = (persistent: boolean) => {
+    const parts = [
+      "customer_auth=1",
+      "Path=/",
+      "SameSite=Lax",
+      // "Secure", // aktifkan saat sudah HTTPS/production
+    ];
+    if (persistent) {
+      parts.push("Max-Age=2592000"); // 30 hari
+    }
+    document.cookie = parts.join("; ");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setIsLoading(true);
 
     try {
-      const res = await loginCustomer({ email: email.trim(), password });
+      await loginCustomer({ email: email.trim(), password });
       /**
        * loginCustomer sudah menyimpan token ke localStorage.
-       * Opsi: kalau "remember me" dimatikan, hapus token saat tab ditutup.
+       * Set cookie flag untuk middleware (/checkout)
        */
-      if (!remember && typeof window !== "undefined") {
-        // Pindahkan token ke sessionStorage agar hilang saat tab ditutup
-        const token = localStorage.getItem("customer_access_token");
-        if (token) {
-          sessionStorage.setItem("customer_access_token", token);
-          localStorage.removeItem("customer_access_token");
-          // override helper agar sesi ini pakai sessionStorage (sederhana)
-          setCustomerToken(sessionStorage.getItem("customer_access_token"));
-        }
-      }
+      setAuthCookie(remember);
 
-      // Redirect setelah login sukses
-      router.push("/");
+      // Redirect setelah login
+      const next = searchParams.get("next");
+      router.push(next || "/");
       toast({ title: "Login Success" });
     } catch (err: any) {
-      setErrorMsg(
-        "Login failed. Please check your credentials."
-      );
+      setErrorMsg("Login failed. Please check your credentials.");
       toast({
         variant: "destructive",
         title: "Login failed",

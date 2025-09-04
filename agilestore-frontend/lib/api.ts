@@ -1,93 +1,6 @@
-// API utility functions for client-side requests
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
 const API_BASE = "http://localhost:8000/api/";
-
-// // Fetch all products
-// export const fetchProducts = async (): Promise<Product[]> => {
-//   const response = await fetch("/api/products");
-//   const result = await response.json();
-
-//   if (!result.success) {
-//     throw new Error(result.error || "Failed to fetch products");
-//   }
-
-//   return result.data;
-// };
-
-// Fetch pricing for a specific product
-// export const fetchPricing = async (
-//   productSlug: string
-// ): Promise<PricingPackage[]> => {
-//   const response = await fetch(`/api/pricing?product=${productSlug}`);
-//   const result = await response.json();
-
-//   if (!result.success) {
-//     throw new Error(result.error || "Failed to fetch pricing");
-//   }
-
-//   return result.data.packages;
-// };
-
-// Process checkout
-// export const processCheckout = async (checkoutData: CheckoutData) => {
-//   const response = await fetch("/api/checkout", {
-//     method: "POST",
-//     headers: {
-//       "Content-Type": "application/json",
-//     },
-//     body: JSON.stringify(checkoutData),
-//   });
-
-//   const result = await response.json();
-
-//   if (!result.success) {
-//     throw new Error(result.error || "Checkout failed");
-//   }
-
-//   return result.data;
-// };
-
-// Fetch order details
-// export const fetchOrder = async (orderId: string) => {
-//   const response = await fetch(`/api/order/${orderId}`);
-//   const result = await response.json();
-
-//   if (!result.success) {
-//     throw new Error(result.error || "Failed to fetch order");
-//   }
-
-//   return result.data;
-// };
-
-// Send notifications
-// export const sendNotification = async (notificationData: {
-//   type: "email" | "whatsapp" | "both";
-//   recipient: {
-//     email?: string;
-//     phone?: string;
-//     name: string;
-//   };
-//   template: "order_confirmation" | "payment_success" | "account_activation";
-//   data: Record<string, any>;
-// }) => {
-//   const response = await fetch("/api/notify", {
-//     method: "POST",
-//     headers: {
-//       "Content-Type": "application/json",
-//     },
-//     body: JSON.stringify(notificationData),
-//   });
-
-//   const result = await response.json();
-
-//   if (!result.success) {
-//     throw new Error(result.error || "Failed to send notification");
-//   }
-
-//   return result.data;
-// };
-
 /**
  * Customer AUTH.
  */
@@ -141,30 +54,30 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 // ---------- Interceptor: auto refresh 1x saat 401 ----------
-let isRefreshing = false;
-let pendingQueue: Array<(t: string | null) => void> = [];
+// let isRefreshing = false;
+// let pendingQueue: Array<(t: string | null) => void> = [];
 
-function resolveQueue(token: string | null) {
-  pendingQueue.forEach((cb) => cb(token));
-  pendingQueue = [];
-}
+// function resolveQueue(token: string | null) {
+//   pendingQueue.forEach((cb) => cb(token));
+//   pendingQueue = [];
+// }
 
 // Panggil endpoint refresh Laravel
-async function refreshCustomerToken(): Promise<string | null> {
-  try {
-    const res = await api.post("/api/customer/refresh", {});
-    const newToken: string | undefined = res?.data?.access_token;
-    if (newToken) {
-      setCustomerToken(newToken);
-      api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-      return newToken;
-    }
-  } catch {
-    // ignore
-  }
-  clearCustomerToken();
-  return null;
-}
+// async function refreshCustomerToken(): Promise<string | null> {
+//   try {
+//     const res = await api.post("customer/refresh", {});
+//     const newToken: string | undefined = res?.data?.access_token;
+//     if (newToken) {
+//       setCustomerToken(newToken);
+//       api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+//       return newToken;
+//     }
+//   } catch {
+//     // ignore
+//   }
+//   clearCustomerToken();
+//   return null;
+// }
 
 api.interceptors.response.use(
   (res) => res,
@@ -172,35 +85,23 @@ api.interceptors.response.use(
     const original = error.config as any;
     const status = error.response?.status;
 
-    if (status === 401 && !original?._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve) => {
-          pendingQueue.push((token) => {
-            if (token) {
-              original.headers = original.headers || {};
-              original.headers.Authorization = `Bearer ${token}`;
-              original._retry = true;
-              resolve(api.request(original));
-            } else {
-              resolve(Promise.reject(error));
-            }
-          });
-        });
-      }
+    // Jika UNAUTHORIZED
+    if (status === 401) {
+      // 1) Bersihkan token supaya tidak terus2an kirim Bearer invalid
+      clearCustomerToken();
 
-      isRefreshing = true;
-      const newToken = await refreshCustomerToken();
-      isRefreshing = false;
-      resolveQueue(newToken);
-
-      if (newToken) {
-        original.headers = original.headers || {};
-        original.headers.Authorization = `Bearer ${newToken}`;
-        original._retry = true;
-        return api.request(original);
-      }
+      // 2) Opsional: arahkan ke login + next (hanya di browser) jangan redirect agar halaman bisa diakses ketika user blm login selain checkut
+      // if (typeof window !== "undefined") {
+      //   const url = new URL(window.location.href);
+      //   const currentPathAndQuery = url.pathname + url.search;
+      //   // Hindari loop kalau kita memang sedang di halaman login
+      //   if (!url.pathname.startsWith("/login")) {
+      //     window.location.href = `/login?next=${encodeURIComponent(currentPathAndQuery)}`;
+      //   }
+      // }
     }
 
+    // Jangan lakukan auto refresh di sisi FE (backend belum siap)
     return Promise.reject(error);
   }
 );
@@ -257,15 +158,23 @@ export interface CheckoutData {
 }
 
 // ===============================
-// FUNGSI PRODUK/PRICING/CHECKOUT/ORDER/NOTIFY (Next.js API routes)
+// FUNGSI PRODUK/PRICING/CHECKOUT/ORDER/NOTIFY
 // ===============================
 
 // Fetch all products
-export const fetchProducts = async (): Promise<Product[]> => {
-  const { data: result } = await nextApi.get("/api/products");
-  if (!result?.success) throw new Error(result?.error || "Failed to fetch products");
-  return result.data;
-};
+// Fetch all products (langsung ke Laravel)
+export const fetchProducts = async () => {
+  const { data } = await api.get("products")
+  if (!data?.success) throw new Error(data?.error || "Failed to fetch products")
+  return data.data
+}
+
+// Fetch detail product
+export const fetchProductDetail = async (productCode: string) => {
+  const { data } = await api.get(`products/${encodeURIComponent(productCode)}`)
+  if (!data?.success) throw new Error(data?.error || "Failed to fetch product detail")
+  return data.data
+}
 
 // Fetch pricing for a specific product
 export const fetchPricing = async (productSlug: string): Promise<PricingPackage[]> => {
@@ -373,11 +282,11 @@ export async function logoutCustomer() {
 }
 
 // Refresh token (dipakai juga oleh interceptor)
-export async function manualRefreshCustomerToken() {
-  const token = await refreshCustomerToken();
-  if (!token) throw new Error("Refresh token failed");
-  return token;
-}
+// export async function manualRefreshCustomerToken() {
+//   const token = await refreshCustomerToken();
+//   if (!token) throw new Error("Refresh token failed");
+//   return token;
+// }
 
 // Update Profile (full_name/email/phone/company)
 export async function updateCustomerProfile(partial: Partial<Omit<CustomerRegisterPayload, "password">>) {

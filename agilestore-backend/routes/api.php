@@ -38,13 +38,14 @@ Route::prefix('customer')->group(function () {
     });
 });
 
-// nanti dipindah ke auth
+Route::middleware('auth:customer-api')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);  // create + snap token
     Route::get('/orders/{id}', [OrderController::class, 'show']); // detail order
-
+    
     // Webhook Midtrans
     Route::post('/midtrans/webhook', [MidtransWebhookController::class, 'handle']);
+});
 
-    // product catalog
-    Route::get('/products', [CatalogController::class, 'products']);
-    Route::get('/products/{product_code}', [CatalogController::class, 'show']);
+// product catalog
+Route::get('/products', [CatalogController::class, 'products']);
+Route::get('/products/{product_code}', [CatalogController::class, 'show']);

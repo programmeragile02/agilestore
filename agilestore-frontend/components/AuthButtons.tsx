@@ -40,6 +40,7 @@ export default function AuthButtons() {
   const handleLogout = async () => {
     try {
       await logoutCustomer();
+      document.cookie = "customer_auth=; Path=/; Max-Age=0; SameSite=Lax";
       setUser(null);
       toast({ title: "Signed out", description: "See you again!" });
     } finally {
