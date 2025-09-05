@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Montserrat, Inter } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import Script from "next/script"
 
 const montserrat = Montserrat({
   subsets: ["latin"],
@@ -31,7 +32,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${montserrat.variable} ${inter.variable}`}>
-      <body className="font-sans antialiased">{children}<Toaster /></body>
+      <body className="font-sans antialiased">
+        {children}
+        <Toaster />
+        {/* Midtrans Snap */}
+        <Script
+          src={
+            process.env.NEXT_PUBLIC_MIDTRANS_ENV === "production"
+              ? "https://app.midtrans.com/snap/snap.js"
+              : "https://app.sandbox.midtrans.com/snap/snap.js"
+          }
+          data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+          strategy="afterInteractive"
+        />
+      </body>
     </html>
   )
 }

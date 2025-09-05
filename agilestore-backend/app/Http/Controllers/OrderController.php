@@ -15,19 +15,19 @@ class OrderController extends Controller
 {
     public function store(Request $req, PricingService $pricing, MidtransService $midtrans)
     {
+        // validasi minimal
         $data = $req->validate([
             'product_code'   => 'required|string|exists:mst_products,product_code',
             'package_code'   => 'required|string|exists:mst_product_packages,package_code',
             'duration_code'  => 'required|string|exists:mst_durations,code',
-
-            // opsi 1: kirim customer_id
-            'customer_id'    => 'nullable|string',
-
-            // opsi 2: kirim data customer (akan find-or-create by email)
-            'customer_name'  => 'required_without:customer_id|string|max:150',
-            'customer_email' => 'required_without:customer_id|email|max:150',
-            'customer_phone' => 'nullable|string|max:50',
         ]);
+
+        // Ambil user dari auth:customer-api ---
+        /** @var \App\Models\Customer|null $auth */
+        $auth = auth('customer-api')->user();
+        if (!$auth) {
+            abort(401, 'Unauthorized');
+        }
 
         // Validasi paket sesuai product_code
         $package = MstProductPackage::where('package_code', $data['package_code'])
@@ -48,23 +48,6 @@ class OrderController extends Controller
             ]);
         }
 
-        // Resolve customer
-        $customer = null;
-        if (!empty($data['customer_id'])) {
-            $customer = Customer::find($data['customer_id']);
-            if (!$customer) {
-                throw ValidationException::withMessages([
-                    'customer_id' => 'Customer tidak ditemukan.',
-                ]);
-            }
-        } else {
-            // find-or-create berdasarkan email
-            $customer = Customer::firstOrCreate(
-                ['email' => $data['customer_email']],
-                ['name'  => $data['customer_name'], 'phone' => $data['customer_phone'] ?? null]
-            );
-        }
-
         // Hitung harga
         $priceInfo = $pricing->resolvePrice(
             $data['product_code'],
@@ -72,13 +55,18 @@ class OrderController extends Controller
             $data['duration_code'],
         );
 
+        // Harus mengembalikan: ['pricelist_item_id','price','discount','total','currency']
+        if (!isset($priceInfo['total'])) {
+            abort(422, 'Tidak bisa menentukan harga untuk kombinasi ini.');
+        }
+
         // Buat order (status pending)
         $order = new Order();
         $order->fill([
-            'customer_id'      => (string) $customer->id,
-            'customer_name'    => $customer->name,
-            'customer_email'   => $customer->email,
-            'customer_phone'   => $customer->phone,
+            'customer_id'        => (string) $auth->id,
+            'customer_name'      => $auth->full_name,
+            'customer_email'     => $auth->email,
+            'customer_phone'     => $auth->phone,
 
             'product_code'     => $data['product_code'],
             'package_code'     => $data['package_code'],
@@ -96,6 +84,8 @@ class OrderController extends Controller
 
         // Payload Midtrans
         $midtransOrderId = "ORD-{$order->id}";
+
+        $frontend = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
         $payload = [
             'transaction_details' => [
                 'order_id'     => $midtransOrderId,
@@ -112,7 +102,10 @@ class OrderController extends Controller
                 'quantity' => 1,
                 'name'     => "{$order->product_code} - {$order->package_code} ({$order->duration_code})",
             ]],
-            // opsional: enable payment channel tertentu, callbacks, dll.
+            'callbacks' => [
+                'finish' => "{$frontend}/orders/{$order->id}?status=success",
+                'error'  => "{$frontend}/orders/{$order->id}?status=error",
+            ],
         ];
 
         // Snap token
@@ -142,7 +135,33 @@ class OrderController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $order,
+            'data'    => [
+                'id'                    => (string) $order->id,
+                'snap_token'            => $order->snap_token,
+                'status'                => $order->status,
+                'currency'              => $order->currency,
+                'price'                 => (float) $order->price,
+                'discount'              => (float) $order->discount,
+                'total'                 => (float) $order->total,
+                'product_code'          => $order->product_code,
+                'package_code'          => $order->package_code,
+                'duration_code'         => $order->duration_code,
+                'midtrans_order_id'     => $order->midtrans_order_id,
+                'payment_status'        => $order->payment_status,
+                'payment_type'          => $order->payment_type,
+                'va_number'             => $order->va_number,
+                'bank'                  => $order->bank,
+                'permata_va_number'     => $order->permata_va_number,
+                'qris_data'             => $order->qris_data,
+                'paid_at'               => $order->paid_at,
+                'created_at'            => $order->created_at,
+                'customer'              => [
+                    'id'        => (string) $order->customer_id,
+                    'name'      => $order->customer_name,
+                    'email'     => $order->customer_email,
+                    'phone'     => $order->customer_phone,
+                ],
+            ],
         ]);
     }
 }

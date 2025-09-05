@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Payments;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -14,23 +15,48 @@ class MidtransWebhookController extends Controller
         $payload = $req->all();
         Log::info('Midtrans webhook payload', $payload);
 
-        $orderId = $payload['order_id']     ?? null; // "ORD-{uuid}"
-        $status  = $payload['transaction_status'] ?? null;
-        $type    = $payload['payment_type'] ?? null;
+        // --- Signature check ---
+        $serverKey = config('midtrans.server_key'); // ambil dari config/services.php
+        $signature = $payload['signature_key'] ?? '';
+        $orderId   = $payload['order_id'] ?? '';              // ex: "ORD-{uuid}"
+        $statusCode= $payload['status_code'] ?? '';
+        $gross     = (string) ($payload['gross_amount'] ?? '0');
 
-        if (!$orderId) {
-            return response()->json(['ok' => true]); // ignore
+        $expected = hash('sha512', $orderId.$statusCode.$gross.$serverKey);
+        if (!hash_equals($expected, $signature)) {
+            Log::warning('Midtrans signature mismatch', [
+                'order_id' => $orderId,
+                'status_code' => $statusCode,
+                'gross_amount' => $gross,
+            ]);
+            return response()->json(['ok' => true], 200); // ignore silently
         }
+        // --- end signature check ---
+
+        // Ambil field status transaksi utk mapping (kamu lupa set $status)
+        $status = $payload['transaction_status'] ?? null;
+        $paymentType  = $payload['payment_type'] ?? null;
+        $fraudStatus  = $payload['fraud_status'] ?? null; 
 
         // extract uuid dari "ORD-{uuid}"
-        $id = preg_replace('/^ORD-/', '', $orderId);
+        // $id = preg_replace('/^ORD-/', '', $orderId);
 
-        $order = Order::where('id', $id)->first();
-        if (!$order) return response()->json(['ok' => true]);
+        // $order = Order::where('id', $id)->first();
+
+        $orderIdRaw = (string) ($payload['order_id'] ?? '');
+        $id = str_starts_with($orderIdRaw, 'ORD-') ? substr($orderIdRaw, 4) : $orderIdRaw;
+        // atau kalau id kamu memang UUID yang kamu simpan, cukup simpan juga midtrans_order_id
+        // Cari order berdasarkan midtrans_order_id
+        $order = Order::where('midtrans_order_id', $orderIdRaw)->first();
+
+        if (!$order && str_starts_with($orderIdRaw, 'ORD-')) {
+            $uuid = substr($orderIdRaw, 4);
+            $order = Order::find($uuid);
+        }
 
         // simpan snapshot penting
         $order->payment_status          = $status;
-        $order->payment_type            = $type;
+        $order->payment_type            = $paymentType;
         $order->midtrans_transaction_id = $payload['transaction_id'] ?? $order->midtrans_transaction_id;
 
         // VA / bank
@@ -48,22 +74,42 @@ class MidtransWebhookController extends Controller
 
         // mapping status
         switch ($status) {
-            case 'capture':
-            case 'settlement':
-                $order->status  = 'paid';
-                $order->paid_at = now();
-                break;
-            case 'pending':
+        case 'capture':
+            if ($paymentType === 'credit_card') {
+                if ($fraudStatus === 'challenge') {
+                    $order->status = 'pending';
+                } else { // accept atau null
+                    $order->status  = 'paid';
+                    $order->paid_at = now();
+                }
+            } else {
+                // Non-cc jarang "capture", fallback ke pending
                 $order->status = 'pending';
-                break;
-            case 'deny':
-            case 'cancel':
-                $order->status = 'failed';
-                break;
-            case 'expire':
-                $order->status = 'expired';
-                break;
-        }
+            }
+            break;
+
+        case 'settlement':
+            $order->status  = 'paid';
+            $order->paid_at = now();
+            break;
+
+        case 'pending':
+            $order->status = 'pending';
+            break;
+
+        case 'deny':
+        case 'cancel':
+            $order->status = 'failed';
+            break;
+
+        case 'expire':
+            $order->status = 'expired';
+            break;
+
+        default:
+        // biarkan tanpa perubahan
+        break;
+}
 
         $order->save();
 

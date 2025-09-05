@@ -176,20 +176,6 @@ export const fetchProductDetail = async (productCode: string) => {
   return data.data
 }
 
-// Fetch pricing for a specific product
-export const fetchPricing = async (productSlug: string): Promise<PricingPackage[]> => {
-  const { data: result } = await nextApi.get(`/api/pricing`, { params: { product: productSlug } });
-  if (!result?.success) throw new Error(result?.error || "Failed to fetch pricing");
-  return result.data.packages;
-};
-
-// Process checkout
-export const processCheckout = async (checkoutData: CheckoutData) => {
-  const { data: result } = await nextApi.post("/api/checkout", checkoutData);
-  if (!result?.success) throw new Error(result?.error || "Checkout failed");
-  return result.data;
-};
-
 // Fetch order details
 export const fetchOrder = async (orderId: string) => {
   const { data: result } = await nextApi.get(`/api/order/${orderId}`);
@@ -332,4 +318,25 @@ export async function resetCustomerPassword(payload: { email: string; token: str
   const { data } = await api.post("customer/reset-password", payload);
   if (data?.success === false) throw new Error(data?.message || "Reset password failed");
   return data as { success: true; message: string };
+}
+
+// order
+export type CreateOrderPayload = {
+  product_code: string;
+  package_code: string;
+  duration_code: string; // "M1" | "M6" | "M12"
+};
+
+export type CreateOrderResponse = {
+  order_id: string;
+  snap_token: string;
+  total: number;
+  currency: string;
+  status: string;
+};
+
+export async function createOrder(payload: CreateOrderPayload): Promise<CreateOrderResponse> {
+  const { data } = await api.post("orders", payload);
+  if (data?.success === false) throw new Error(data?.message || "Failed to create order");
+  return data.data as CreateOrderResponse;
 }

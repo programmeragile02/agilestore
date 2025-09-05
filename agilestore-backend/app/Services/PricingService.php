@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\MstDuration;
 use App\Models\MstProductPricelistItem;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -12,12 +13,19 @@ class PricingService
     {
         $now = Carbon::now();
 
+        $duration = MstDuration::where('code', $durationCode)->first();
+        if (!$duration) {
+            throw ValidationException::withMessages([
+                'duration_code' => ["Durasi tidak valid: {$durationCode}"],
+            ]);
+        }
+
         $item = MstProductPricelistItem::query()
             ->whereHas('header', function ($q) use ($productCode) {
                 $q->where('product_code', $productCode);
             })
             ->where('package_code', $packageCode)
-            ->where('duration_code', $durationCode)
+            ->where('duration_id', $duration->id)
             ->where(function ($q) use ($now) {
                 $q->whereNull('effective_start')->orWhere('effective_start', '<=', $now);
             })
