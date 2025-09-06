@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Payments;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\NotifyWarehouseJob;
 use App\Models\Order;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -112,6 +113,12 @@ class MidtransWebhookController extends Controller
 }
 
         $order->save();
+
+        // --- Jika paid → kirim job provisioning ke Warehouse
+        if ($order->status === 'paid') {
+            // Gunakan job queue agar resilient (retry, backoff, dll)
+            NotifyWarehouseJob::dispatch($order->id)->onQueue('default');
+        }
 
         return response()->json(['ok' => true]);
     }
