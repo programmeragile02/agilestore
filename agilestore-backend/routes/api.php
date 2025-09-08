@@ -41,6 +41,9 @@ Route::prefix('customer')->group(function () {
 Route::middleware('auth:customer-api')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);  // create + snap token
     Route::get('/orders/{id}', [OrderController::class, 'show']); // detail order
+
+    // terima callback dari warehouse ketika provisioning ok
+    // Route::post('/warehouse/callback', [WarehouseCallbackController::class, 'handle']);
 });
 
 // Webhook Midtrans
@@ -49,3 +52,4 @@ Route::post('/midtrans/webhook', [MidtransWebhookController::class, 'handle']);
 // product catalog
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product_code}', [CatalogController::class, 'show']);
+

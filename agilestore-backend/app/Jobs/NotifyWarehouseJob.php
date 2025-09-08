@@ -33,6 +33,7 @@ class NotifyWarehouseJob implements ShouldQueue
             'customer_id'    => $order->customer_id,
             'product_code'   => $order->product_code,   // gunakan code, bukan nama
             'product_id'     => $order->product_id ?? null,
+            'customer_name'  => $order->customer_name,
             'customer_email' => $order->customer_email,
             'customer_phone' => $order->customer_phone,
         ];

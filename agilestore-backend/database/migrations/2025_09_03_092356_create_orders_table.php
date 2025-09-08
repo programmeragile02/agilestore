@@ -23,11 +23,11 @@ return new class extends Migration
 
             // referensi by CODE (sesuai modelmu)
             $table->string('product_code', 64)->index();
-            $table->string('package_code', 64)->nullable()->index();
-            $table->string('duration_code', 64)->nullable()->index();
+            $table->string('package_code', 64)->index();
+            $table->string('duration_code', 64)->index();
 
             // (opsional) simpan linkage ke pricelist item
-            $table->string('pricelist_item_id', 64)->nullable();
+            $table->string('pricelist_item_id', 64);
 
             // amounts
             $table->decimal('price', 18, 2)->default(0);

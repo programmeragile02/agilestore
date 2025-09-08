@@ -17,8 +17,12 @@ import {
   Copy,
   QrCode,
   XCircle,
+  MessageCircle,
+  Download,
+  ArrowRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import Link from "next/link";
 
 declare global {
   interface Window {
@@ -41,15 +45,21 @@ const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY!;
 
 type Order = {
   id: string;
+  midtrans_order_id: string;
   snap_token: string;
   status: "pending" | "paid" | "failed" | "expired";
   currency: string;
   price: number;
   discount: number;
   total: number;
+
   product_code: string;
+  product_name?: string;
   package_code: string;
+  package_name?: string;
   duration_code: string;
+  duration_name?: string;
+
   payment_status?: string;
   payment_type?: string; // bank_transfer, qris, credit_card, ewallet, dsb
   va_number?: string;
@@ -59,6 +69,54 @@ type Order = {
   customer?: { id: string; name: string; email: string; phone?: string };
   created_at?: string;
   paid_at?: string | null;
+};
+
+/* =========================
+   Helpers label & format
+   ========================= */
+
+const toTitle = (s?: string) =>
+  (s || "")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+const durationLabel = (o: Order) => {
+  // 1) Jika BE sudah kirim name, pakai itu
+  if (o.duration_name && o.duration_name.trim()) return o.duration_name;
+
+  // 2) Parse dari code (M1/M6/M12 atau DUR-1/6/12)
+  const code = (o.duration_code || "").toUpperCase();
+  const m = code.match(/^M(\d+)$/);
+  if (m) {
+    const n = Number(m[1]);
+    return n === 1 ? "1 Month" : `${n} Months`;
+  }
+  const d = code.match(/^DUR-(\d+)$/);
+  if (d) {
+    const n = Number(d[1]);
+    return n === 1 ? "1 Month" : `${n} Months`;
+  }
+  // fallback
+  return toTitle(code || "Unknown");
+};
+
+const paymentMethodLabel = (v?: string) => {
+  switch ((v || "").toLowerCase()) {
+    case "credit_card":
+    case "card":
+      return "Credit Card";
+    case "bank_transfer":
+      return "Bank Transfer";
+    case "qris":
+      return "QRIS";
+    case "ewallet":
+    case "e-wallet":
+      return "E-Wallet";
+    default:
+      return toTitle(v || "-");
+  }
 };
 
 export default function OrderDetailPage() {
@@ -122,18 +180,21 @@ export default function OrderDetailPage() {
         return {
           icon: <CheckCircle2 className="h-12 w-12 text-green-600" />,
           title: "Payment Successful",
+          subtitle: "Thank you! We’ve activated your account and sent details via Email and WhatsApp",
           badgeClass: "bg-green-100 text-green-800",
         };
       case "failed":
         return {
           icon: <XCircle className="h-12 w-12 text-red-600" />,
           title: "Payment Failed",
+          subtitle: "We encountered an issue processing your payment. Don't worry, no charges were made to your account.",
           badgeClass: "bg-red-100 text-red-800",
         };
       case "expired":
         return {
           icon: <XCircle className="h-12 w-12 text-gray-500" />,
           title: "Payment Expired",
+          subtitle: "Your payment window has expired. Please create a new order to continue.",
           badgeClass: "bg-gray-200 text-gray-800",
         };
       // default = pending
@@ -146,6 +207,7 @@ export default function OrderDetailPage() {
     }
   }
 
+  // load API Order details
   const load = async () => {
     const { data } = await api.get(`orders/${id}`);
     setOrder(data?.data);
@@ -159,26 +221,6 @@ export default function OrderDetailPage() {
     return () => clearInterval(pollRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  // Redirect otomatis ke halaman Success/Failed jika status final
-  // useEffect(() => {
-  //   if (!order) return;
-  //   if (order.status === "paid") {
-  //     // (opsional) hapus orderData localStorage yang dipakai halaman lama
-  //     try {
-  //       localStorage.removeItem("orderData");
-  //     } catch {}
-  //     router.replace(`/order-success?orderId=${order.id}`);
-  //     clearInterval(pollRef.current);
-  //   } else if (order.status === "failed" || order.status === "expired") {
-  //     router.replace(
-  //       `/order-failed?orderId=${order.id}&error=${encodeURIComponent(
-  //         order.payment_status || order.status
-  //       )}`
-  //     );
-  //     clearInterval(pollRef.current);
-  //   }
-  // }, [order, router]);
 
   const copy = async (text: string) => {
     try {
@@ -208,6 +250,13 @@ export default function OrderDetailPage() {
   const meta = getStatusMeta(order?.status);
   const isPending = order?.status === "pending";
   const isPaid = order?.status === "paid";
+
+  // ======== LABELS (prioritas name → fallback code/beautify) ========
+  const productLabel =
+    order.product_name?.trim() || toTitle(order.product_code || "");
+  const packageLabel =
+    order.package_name?.trim() || toTitle(order.package_code || "");
+  const durationNice = durationLabel(order);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -240,73 +289,86 @@ export default function OrderDetailPage() {
                 <h1 className="text-3xl font-bold text-slate-900 mb-2">
                   {meta.title}
                 </h1>
-                <h1 className="text-xl font-semibold text-slate-700 mb-2">
-                  ORD-{order.id}
-                </h1>
+                <p className="text-lg font-semibold text-slate-700 mb-2">
+                  {meta.subtitle}
+                </p>
               </>
             )}
           </div>
 
-          <Card className="bg-white border-0 shadow-sm">
-            <CardContent className="p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-slate-500">Status</div>
-                  <div
-                    className={`mt-1 px-2 py-1 rounded-md ${meta.badgeClass}`}
-                  >
-                    {order.status}
-                  </div>
+          <Card className="bg-white shadow-lg border-0 mb-8">
+            <CardContent className="p-8">
+              <h3 className="text-xl font-semibold text-slate-900 mb-6 text-center">
+                Order Summary
+              </h3>
+
+              <div className="space-y-6">
+                {/* Product Name */}
+                <div className="flex justify-between items-start">
+                  <span className="text-slate-600 font-medium">
+                    Product Name:
+                  </span>
+                  <span className="text-slate-900 font-semibold text-right">
+                    {productLabel}
+                  </span>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm text-slate-500">Total</div>
-                  <div className="text-2xl font-bold text-blue-600">
+
+                {/* Order ID */}
+                <div className="flex justify-between items-start">
+                  <span className="text-slate-600 font-medium">Order ID:</span>
+                  <span className="text-slate-900 font-mono font-semibold">
+                    {order.midtrans_order_id}
+                  </span>
+                </div>
+
+                {/* Amount Paid */}
+                <div className="flex justify-between items-start">
+                  <span className="text-slate-600 font-medium">
+                    Amount Paid:
+                  </span>
+                  <span className="text-2xl font-bold text-blue-600">
                     {order.currency}{" "}
                     {Number(order.total).toLocaleString("id-ID")}
-                  </div>
+                  </span>
                 </div>
-              </div>
 
-              <Separator />
+                {/* Payment Method */}
+                <div className="flex justify-between items-start">
+                  <span className="text-slate-600 font-medium">
+                    Payment Method:
+                  </span>
+                  <span className="text-slate-900 font-semibold">
+                    {paymentMethodLabel(order.payment_type)}
+                  </span>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-slate-500">Product</div>
-                  <div className="font-semibold text-slate-900 mt-1">
-                    {order.product_code}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-500">Package</div>
-                  <div className="font-semibold text-slate-900 mt-1">
-                    {order.package_code}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-500">Duration</div>
-                  <div className="font-semibold text-slate-900 mt-1">
-                    {order.duration_code}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-500">Payment Method</div>
-                  <div className="font-semibold text-slate-900 mt-1">
-                    {order.payment_type || "-"}
-                  </div>
-                </div>
-                {order.status === "paid" &&
-                  searchParams.get("status") === "success" && (
-                    <a href="/my-account">ke produk anda</a>
-                  )}
-                {order.status === "pending" && (
-                  <Button
-                    onClick={openSnap}
-                    disabled={!order?.snap_token || opening}
-                    className="mt-2 bg-indigo-600 hover:bg-indigo-700"
+                {/* Status */}
+                <div className="flex justify-between items-start">
+                  <span className="text-slate-600 font-medium">Status:</span>
+                  <span
+                    className={`mt-1 px-2 py-1 rounded-md ${meta.badgeClass} uppercase font-semibold`}
                   >
-                    {opening ? "Opening..." : "Bayar sekarang"}
-                  </Button>
-                )}
+                    {order.status}
+                  </span>
+                </div>
+
+                <Separator className="my-6" />
+
+                {/* Package Details */}
+                <div className="flex justify-center gap-3">
+                  <Badge
+                    variant="outline"
+                    className="border-blue-200 text-blue-700 px-4 py-2"
+                  >
+                    {packageLabel}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="border-green-200 text-green-700 px-4 py-2"
+                  >
+                    {durationNice}
+                  </Badge>
+                </div>
               </div>
 
               {/* Instruksi khusus metode pembayaran */}
@@ -344,7 +406,7 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 mt-3">
-                    Selesaikan pembayaran sebelum masa berlaku habis.
+                    Complete the payment before the expiration date.
                   </p>
                 </div>
               )}
@@ -358,8 +420,8 @@ export default function OrderDetailPage() {
                       <div className="font-semibold">Scan QRIS</div>
                     </div>
                     <div className="text-sm text-slate-600">
-                      Buka aplikasi pembayaran Anda dan scan kode QR yang tampil
-                      di aplikasi Midtrans Snap.
+                      Open your payment app and scan the QR code displayed in
+                      the Midtrans Snap app.
                     </div>
                   </div>
                 )}
@@ -372,6 +434,60 @@ export default function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {order.status === "pending" && (
+            <Button
+              onClick={openSnap}
+              disabled={!order?.snap_token || opening}
+              className="mt-2 bg-indigo-600 hover:bg-indigo-700"
+            >
+              {opening ? "Opening..." : "Pay Now"}
+            </Button>
+          )}
+
+          {order.status === "paid" &&
+            searchParams.get("status") === "success" && (
+              <>
+                {/* Main CTA Button */}
+                <div className="text-center mb-8">
+                  <Button
+                    asChild
+                    size="lg"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold shadow-lg"
+                  >
+                    <Link href="/my-account">
+                      View Dashboard
+                      <ArrowRight className="h-5 w-5 ml-2" />
+                    </Link>
+                  </Button>
+                </div>
+
+                {/* Secondary Actions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    // onClick={handleDownloadInvoice}
+                    className="border-slate-300 bg-transparent"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Invoice
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    asChild
+                    className="border-slate-300 bg-transparent"
+                  >
+                    <Link href="/support">
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Contact Support
+                    </Link>
+                  </Button>
+                </div>
+              </>
+            )}
         </div>
       </main>
       <Footer />

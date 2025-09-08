@@ -106,56 +106,56 @@ api.interceptors.response.use(
   }
 );
 
-export interface Product {
-  id: number;
-  name: string;
-  slug: string;
-  shortDescription: string;
-  longDescription: string;
-  heroImage: string;
-  category: string;
-  features: string[];
-  packages: string[];
-  durations: number[];
-  status: string;
-}
+// export interface Product {
+//   id: number;
+//   name: string;
+//   slug: string;
+//   shortDescription: string;
+//   longDescription: string;
+//   heroImage: string;
+//   category: string;
+//   features: string[];
+//   packages: string[];
+//   durations: number[];
+//   status: string;
+// }
 
-export interface PricingPackage {
-  package: string;
-  name: string;
-  description: string;
-  features: string[];
-  pricing: Record<number, number>;
-}
+// export interface PricingPackage {
+//   package: string;
+//   name: string;
+//   description: string;
+//   features: string[];
+//   pricing: Record<number, number>;
+// }
 
-export interface CheckoutData {
-  contact: {
-    fullName: string;
-    email: string;
-    phone: string;
-    company?: string;
-  };
-  plan: {
-    product: string;
-    package: string;
-    duration: number;
-    currency: string;
-    taxMode: "inclusive" | "exclusive";
-  };
-  payment: {
-    method: "card" | "bank_transfer" | "ewallet";
-    cardDetails?: {
-      number: string;
-      expiry: string;
-      cvv: string;
-    };
-  };
-  voucher?: {
-    code: string;
-    discount: number;
-  };
-  amount: number;
-}
+// export interface CheckoutData {
+//   contact: {
+//     fullName: string;
+//     email: string;
+//     phone: string;
+//     company?: string;
+//   };
+//   plan: {
+//     product: string;
+//     package: string;
+//     duration: number;
+//     currency: string;
+//     taxMode: "inclusive" | "exclusive";
+//   };
+//   payment: {
+//     method: "card" | "bank_transfer" | "ewallet";
+//     cardDetails?: {
+//       number: string;
+//       expiry: string;
+//       cvv: string;
+//     };
+//   };
+//   voucher?: {
+//     code: string;
+//     discount: number;
+//   };
+//   amount: number;
+// }
 
 // ===============================
 // FUNGSI PRODUK/PRICING/CHECKOUT/ORDER/NOTIFY
@@ -175,25 +175,6 @@ export const fetchProductDetail = async (productCode: string) => {
   if (!data?.success) throw new Error(data?.error || "Failed to fetch product detail")
   return data.data
 }
-
-// Fetch order details
-export const fetchOrder = async (orderId: string) => {
-  const { data: result } = await nextApi.get(`/api/order/${orderId}`);
-  if (!result?.success) throw new Error(result?.error || "Failed to fetch order");
-  return result.data;
-};
-
-// Send notifications
-export const sendNotification = async (notificationData: {
-  type: "email" | "whatsapp" | "both";
-  recipient: { email?: string; phone?: string; name: string };
-  template: "order_confirmation" | "payment_success" | "account_activation";
-  data: Record<string, any>;
-}) => {
-  const { data: result } = await nextApi.post("/api/notify", notificationData);
-  if (!result?.success) throw new Error(result?.error || "Failed to send notification");
-  return result.data;
-};
 
 // ===============================
 // CUSTOMER AUTH (Laravel 12 - sesuai controller kamu)

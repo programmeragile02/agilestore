@@ -18,9 +18,9 @@ class Order extends Model
         'customer_email',
         'customer_phone',
 
-        'product_code',
-        'package_code',
-        'duration_code',
+        'product_code','product_name',
+        'package_code','package_name',
+        'duration_code','duration_name',
         'pricelist_item_id',
 
         'price','discount','total','currency',

@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\MstDuration;
+use App\Models\MstProduct;
 use App\Models\MstProductPackage;
 use App\Models\Order;
 use App\Services\MidtransService;
 use App\Services\PricingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -27,6 +29,12 @@ class OrderController extends Controller
         $auth = auth('customer-api')->user();
         if (!$auth) {
             abort(401, 'Unauthorized');
+        }
+
+        // Ambil master product / package / duration
+        $product = MstProduct::where('product_code', $data['product_code'])->first();
+        if (!$product) {
+            throw ValidationException::withMessages(['product_code' => 'Produk tidak ditemukan.']);
         }
 
         // Validasi paket sesuai product_code
@@ -68,9 +76,15 @@ class OrderController extends Controller
             'customer_email'     => $auth->email,
             'customer_phone'     => $auth->phone,
 
-            'product_code'     => $data['product_code'],
-            'package_code'     => $data['package_code'],
-            'duration_code'    => $data['duration_code'],
+            'product_code'   => $data['product_code'],
+            'product_name'   => $product->product_name ?? $data['product_code'],
+
+            'package_code'   => $data['package_code'],
+            'package_name'   => $package->name ?? $data['package_code'],
+
+            'duration_code'  => $data['duration_code'],
+            'duration_name'  => $duration->name ?? $data['duration_code'],
+
             'pricelist_item_id'=> $priceInfo['pricelist_item_id'],
 
             'price'            => $priceInfo['price'],
@@ -82,8 +96,37 @@ class OrderController extends Controller
         ]);
         $order->save();
 
+        /**
+         * === Generate midtrans_order_id aman dari race: "ORD-YYYYMMDD-000001" ===
+         * Counter reset per hari → key: "order:{YYYYMMDD}"
+         */
+        $today = now()->format('Ymd');
+        $counterKey = "order:{$today}";
+
+        $next = DB::transaction(function () use ($counterKey) {
+            // lock baris counter agar atomic
+            $row = DB::table('counters')->where('key', $counterKey)->lockForUpdate()->first();
+            if (!$row) {
+                DB::table('counters')->insert([
+                    'key'        => $counterKey,
+                    'value'      => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $row = (object)['value' => 0];
+            }
+            $next = (int) $row->value + 1;
+            DB::table('counters')->where('key', $counterKey)->update([
+                'value'      => $next,
+                'updated_at' => now(),
+            ]);
+            return $next;
+        });
+
+        $sequenceSix = str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+        
         // Payload Midtrans
-        $midtransOrderId = "ORD-{$order->id}";
+        $midtransOrderId = "ORD-{$today}-{$sequenceSix}";
 
         $frontend = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/');
         $payload = [
@@ -100,7 +143,7 @@ class OrderController extends Controller
                 'id'       => $order->package_code,
                 'price'    => (int) round($order->total),
                 'quantity' => 1,
-                'name'     => "{$order->product_code} - {$order->package_code} ({$order->duration_code})",
+                'name'     => "{$order->product_name} - {$order->package_name} ({$order->duration_name})",
             ]],
             'callbacks' => [
                 'finish' => "{$frontend}/orders/{$order->id}?status=success",
@@ -121,10 +164,23 @@ class OrderController extends Controller
             'message'   => 'Order created',
             'data'      => [
                 'order_id'   => $order->id,
+                'midtrans_order_id' => $order->midtrans_order_id,
                 'snap_token' => $snapToken,
                 'total'      => (float) $order->total,
                 'currency'   => $order->currency,
                 'status'     => $order->status,
+                'product' => [
+                    'code' => $order->product_code,
+                    'name' => $order->product_name,
+                ],
+                'package' => [
+                    'code' => $order->package_code,
+                    'name' => $order->package_name,
+                ],
+                'duration' => [
+                    'code' => $order->duration_code,
+                    'name' => $order->duration_name,
+                ],
             ],
         ], 201);
     }
@@ -136,25 +192,31 @@ class OrderController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'id'                    => (string) $order->id,
-                'snap_token'            => $order->snap_token,
-                'status'                => $order->status,
-                'currency'              => $order->currency,
-                'price'                 => (float) $order->price,
-                'discount'              => (float) $order->discount,
-                'total'                 => (float) $order->total,
-                'product_code'          => $order->product_code,
-                'package_code'          => $order->package_code,
-                'duration_code'         => $order->duration_code,
-                'midtrans_order_id'     => $order->midtrans_order_id,
-                'payment_status'        => $order->payment_status,
-                'payment_type'          => $order->payment_type,
-                'va_number'             => $order->va_number,
-                'bank'                  => $order->bank,
-                'permata_va_number'     => $order->permata_va_number,
-                'qris_data'             => $order->qris_data,
-                'paid_at'               => $order->paid_at,
-                'created_at'            => $order->created_at,
+                'order_id'          => (string) $order->id,
+                'snap_token'        => $order->snap_token,
+                'status'            => $order->status,
+                'currency'          => $order->currency,
+                'price'             => (float) $order->price,
+                'discount'          => (float) $order->discount,
+                'total'             => (float) $order->total,
+
+                'product_code'      => $order->product_code,
+                'product_name'      => $order->product_name,
+                'package_code'      => $order->package_code,
+                'package_name'      => $order->package_name,
+                'duration_code'     => $order->duration_code,
+                'duration_name'     => $order->duration_name,
+
+                'midtrans_order_id' => $order->midtrans_order_id,
+                'payment_status'    => $order->payment_status,
+                'payment_type'      => $order->payment_type,
+                'va_number'         => $order->va_number,
+                'bank'              => $order->bank,
+                'permata_va_number' => $order->permata_va_number,
+                'qris_data'         => $order->qris_data,
+                'paid_at'           => $order->paid_at,
+                'created_at'        => $order->created_at,
+                
                 'customer'              => [
                     'id'        => (string) $order->customer_id,
                     'name'      => $order->customer_name,

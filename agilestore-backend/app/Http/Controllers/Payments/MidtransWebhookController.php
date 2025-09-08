@@ -19,7 +19,7 @@ class MidtransWebhookController extends Controller
         // --- Signature check ---
         $serverKey = config('midtrans.server_key'); // ambil dari config/services.php
         $signature = $payload['signature_key'] ?? '';
-        $orderId   = $payload['order_id'] ?? '';              // ex: "ORD-{uuid}"
+        $orderId   = $payload['order_id'] ?? '';              // ex: "ORD-"
         $statusCode= $payload['status_code'] ?? '';
         $gross     = (string) ($payload['gross_amount'] ?? '0');
 
@@ -39,20 +39,11 @@ class MidtransWebhookController extends Controller
         $paymentType  = $payload['payment_type'] ?? null;
         $fraudStatus  = $payload['fraud_status'] ?? null; 
 
-        // extract uuid dari "ORD-{uuid}"
-        // $id = preg_replace('/^ORD-/', '', $orderId);
-
-        // $order = Order::where('id', $id)->first();
-
-        $orderIdRaw = (string) ($payload['order_id'] ?? '');
-        $id = str_starts_with($orderIdRaw, 'ORD-') ? substr($orderIdRaw, 4) : $orderIdRaw;
-        // atau kalau id kamu memang UUID yang kamu simpan, cukup simpan juga midtrans_order_id
         // Cari order berdasarkan midtrans_order_id
-        $order = Order::where('midtrans_order_id', $orderIdRaw)->first();
-
-        if (!$order && str_starts_with($orderIdRaw, 'ORD-')) {
-            $uuid = substr($orderIdRaw, 4);
-            $order = Order::find($uuid);
+        $order = Order::where('midtrans_order_id', $orderId)->first();
+        if (!$order) {
+            Log::warning('Midtrans webhook: order not found', ['midtrans_order_id' => $orderId]);
+            return response()->json(['ok' => true], 200);
         }
 
         // simpan snapshot penting

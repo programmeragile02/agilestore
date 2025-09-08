@@ -612,7 +612,7 @@ function ProductPricingStandalone({
                     size="lg"
                     onClick={() => handleStart(c)}
                   >
-                    Start Free Trial
+                    Choose Plan
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </CardContent>
