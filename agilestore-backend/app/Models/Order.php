@@ -38,7 +38,14 @@ class Order extends Model
         'total'   => 'decimal:2',
         'paid_at' => 'datetime',
         'meta'    => 'array',
+
+        'is_active'  => 'boolean',
+        'start_date' => 'datetime',
+        'end_date'   => 'datetime',
     ];
+
+    // Accessor: is_currently_active (tanpa tulis ke DB)
+    protected $appends = ['is_currently_active'];
 
     protected static function booted()
     {
@@ -50,5 +57,25 @@ class Order extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class, 'customer_id', 'id');
+    }
+
+    public function getIsCurrentlyActiveAttribute(): bool
+    {
+        // Aturan: aktif jika flag true dan belum lewat end_date (inclusive)
+        $today = now()->startOfDay();
+        $end   = $this->end_date instanceof Carbon ? $this->end_date->copy()->startOfDay() : null;
+
+        return (bool) $this->is_active && (is_null($end) || $end->greaterThanOrEqualTo($today));
+    }
+
+    // Optional: scope buat query "yang aktif sekarang"
+    public function scopeActiveNow($q)
+    {
+        $today = now()->toDateString();
+        return $q->where('is_active', true)
+                 ->where(function ($qq) use ($today) {
+                     $qq->whereNull('end_date')
+                        ->orWhereDate('end_date', '>=', $today);
+                 });
     }
 }

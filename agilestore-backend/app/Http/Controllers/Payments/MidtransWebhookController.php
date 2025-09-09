@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Payments;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\NotifyWarehouseJob;
+use App\Models\MstDuration;
 use App\Models\Order;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ class MidtransWebhookController extends Controller
         // --- Signature check ---
         $serverKey = config('midtrans.server_key'); // ambil dari config/services.php
         $signature = $payload['signature_key'] ?? '';
-        $orderId   = $payload['order_id'] ?? '';              // ex: "ORD-"
+        $orderId   = $payload['order_id'] ?? '';              // ex: "ORD-YYYYMMDD-000001"
         $statusCode= $payload['status_code'] ?? '';
         $gross     = (string) ($payload['gross_amount'] ?? '0');
 
@@ -34,8 +35,8 @@ class MidtransWebhookController extends Controller
         }
         // --- end signature check ---
 
-        // Ambil field status transaksi utk mapping (kamu lupa set $status)
-        $status = $payload['transaction_status'] ?? null;
+        // Ambil field status transaksi utk mapping 
+        $status = $payload['transaction_status'] ?? null; // settlement|capture|pending|deny|cancel|expire
         $paymentType  = $payload['payment_type'] ?? null;
         $fraudStatus  = $payload['fraud_status'] ?? null; 
 
@@ -46,7 +47,7 @@ class MidtransWebhookController extends Controller
             return response()->json(['ok' => true], 200);
         }
 
-        // simpan snapshot penting
+        // simpan snapshot pembayaran
         $order->payment_status          = $status;
         $order->payment_type            = $paymentType;
         $order->midtrans_transaction_id = $payload['transaction_id'] ?? $order->midtrans_transaction_id;
@@ -64,44 +65,50 @@ class MidtransWebhookController extends Controller
             $order->qris_data = $payload['qr_string'];
         }
 
-        // mapping status
+        // mapping status midtrans -> status internal
         switch ($status) {
-        case 'capture':
-            if ($paymentType === 'credit_card') {
-                if ($fraudStatus === 'challenge') {
-                    $order->status = 'pending';
-                } else { // accept atau null
-                    $order->status  = 'paid';
-                    $order->paid_at = now();
+            case 'capture':
+                if ($paymentType === 'credit_card') {
+                    if ($fraudStatus === 'challenge') {
+                        $order->status    = 'pending';
+                        $order->is_active = false;
+                    } else { // accept
+                        $order->status  = 'paid';
+                        $order->paid_at = now();
+                        $this->applyActivePeriod($order); // set start/end/is_active
+                    }
+                } else {
+                    $order->status    = 'pending';
+                    $order->is_active = false;
                 }
-            } else {
-                // Non-cc jarang "capture", fallback ke pending
-                $order->status = 'pending';
-            }
-            break;
+                break;
 
-        case 'settlement':
-            $order->status  = 'paid';
-            $order->paid_at = now();
-            break;
+            case 'settlement':
+                $order->status  = 'paid';
+                $order->paid_at = now();
+                $this->applyActivePeriod($order); // set start/end/is_active
+                break;
 
-        case 'pending':
-            $order->status = 'pending';
-            break;
+            case 'pending':
+                $order->status    = 'pending';
+                $order->is_active = false;
+                break;
 
-        case 'deny':
-        case 'cancel':
-            $order->status = 'failed';
-            break;
+            case 'deny':
+            case 'cancel':
+                $order->status    = 'failed';
+                $order->is_active = false;
+                break;
 
-        case 'expire':
-            $order->status = 'expired';
-            break;
+            case 'expire':
+                $order->status    = 'expired';
+                $order->is_active = false;
+                break;
 
-        default:
-        // biarkan tanpa perubahan
-        break;
-}
+            default:
+                // no-op
+                break;
+        }
 
         $order->save();
 
@@ -112,5 +119,56 @@ class MidtransWebhookController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Set masa aktif berdasarkan duration_code.
+     * - start_date: today (Asia/Jakarta) atau hari setelah end_date terakhir (renew-aware)
+     * - end_date: inclusive (bulan: +N month - 1 day | hari: +N day - 1 day)
+     * - is_active: true
+     */
+    public function applyActivePeriod(Order $order): void
+    {
+        // Ambil definisi durasi
+        $duration = MstDuration::where('code', $order->duration_code)->first();
+
+        $today = now()->startOfDay();
+
+        // === Renew-aware: cari order aktif terakhir customer & product
+        $lastActive = Order::query()
+            ->where('customer_id', $order->customer_id)
+            ->where('product_code', $order->product_code)
+            ->where('status', 'paid')
+            ->where('is_active', true)
+            ->whereNotNull('end_date')
+            ->orderByDesc('end_date')
+            ->first();
+
+        // start default = today
+        $start = $today->copy();
+
+        if ($lastActive && $lastActive->end_date && $lastActive->end_date->gte($today)) {
+            // tumpuk: mulai H+1 dari end_date terakhir
+            $start = $lastActive->end_date->copy()->addDay()->startOfDay();
+        }
+
+        // hitung end
+        $end = null;
+        if ($duration) {
+            $length = (int) $duration->length;
+            $unit   = strtolower((string) $duration->unit); // 'month'|'months'|'day'|'days'
+            if (in_array($unit, ['month', 'months'], true)) {
+                $end = $start->copy()->addMonthsNoOverflow($length)->subDay(); // inclusive
+            } elseif (in_array($unit, ['day', 'days'], true)) {
+                $end = $start->copy()->addDays($length)->subDay(); // inclusive
+            } else {
+                // fallback treat as month
+                $end = $start->copy()->addMonthsNoOverflow($length)->subDay();
+            }
+        }
+
+        $order->start_date = $start;
+        $order->end_date   = $end;
+        $order->is_active  = true;
     }
 }

@@ -40,68 +40,14 @@ import {
   logoutCustomer,
   updateCustomerProfile,
   type CustomerUser,
+  fetchMyProducts,
+  type MyProductsItem,
+  type MyProductsResponse,
+  fetchCustomerInvoices,
+  type InvoiceItem,
 } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "@/hooks/use-toast";
-
-// Mock subscription data
-const mockSubscriptions = [
-  {
-    id: "sub-001",
-    productName: "Rent Vix Pro",
-    package: "Professional",
-    duration: 12,
-    startDate: "2024-01-15",
-    endDate: "2025-01-15",
-    status: "active",
-    price: 2399000,
-    autoRenew: true,
-    appUrl: "https://rentvix.com/dashboard",
-  },
-  {
-    id: "sub-002",
-    productName: "Absen Fast",
-    package: "Starter",
-    duration: 6,
-    startDate: "2024-02-01",
-    endDate: "2024-08-01",
-    status: "expired",
-    price: 699000,
-    autoRenew: false,
-    appUrl: "https://absenfast.com/login",
-  },
-];
-
-// Mock invoice data
-const mockInvoices = [
-  {
-    id: "INV-2024-001",
-    date: "2024-01-15",
-    product: "Rent Vix Pro",
-    package: "Professional",
-    amount: 2399000,
-    status: "paid",
-    downloadUrl: "#",
-  },
-  {
-    id: "INV-2024-002",
-    date: "2024-02-01",
-    product: "Absen Fast",
-    package: "Starter",
-    amount: 699000,
-    status: "paid",
-    downloadUrl: "#",
-  },
-  {
-    id: "INV-2024-003",
-    date: "2024-12-01",
-    product: "Rent Vix Pro",
-    package: "Professional",
-    amount: 2399000,
-    status: "pending",
-    downloadUrl: "#",
-  },
-];
 
 // FAQ data
 const faqData = [
@@ -153,8 +99,31 @@ export default function MyAccountPage() {
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
 
-  const [subscriptions, setSubscriptions] = useState(mockSubscriptions);
-  const [invoices, setInvoices] = useState(mockInvoices);
+  // subscription / order yang dibayar / product active
+  const [subsLoading, setSubsLoading] = useState(true);
+  const [subscriptions, setSubscriptions] = useState<MyProductsItem[]>([]);
+  // pagination product
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(5);
+  const [meta, setMeta] = useState<{
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+  } | null>(null);
+
+  // Invoices
+  const [invLoading, setInvLoading] = useState(true);
+  const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
+  const [invPage, setInvPage] = useState(1);
+  const [invPerPage, setInvPerPage] = useState(10);
+  const [invMeta, setInvMeta] = useState<{
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+  } | null>(null);
+
   const [activeSection, setActiveSection] =
     useState<ActiveSection>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -185,47 +154,276 @@ export default function MyAccountPage() {
     load();
   }, [router]);
 
-  const formatPrice = (price: number) => {
-    return `IDR ${price.toLocaleString()}`;
-  };
+  // Fetch my-products (setelah login OK)
+  useEffect(() => {
+    if (!user) return;
+    const loadSubs = async () => {
+      try {
+        setSubsLoading(true);
+        const res = await fetchMyProducts({ page, per_page: perPage }); // atau {active:1} bila hanya aktif
+        setSubscriptions(res.items);
+        setMeta(res.meta);
+      } catch (e) {
+        console.error(e);
+        setSubscriptions([]);
+        setMeta({ current_page: 1, per_page: perPage, total: 0, last_page: 1 });
+      } finally {
+        setSubsLoading(false);
+      }
+    };
+    loadSubs();
+  }, [user, page, perPage]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
+  useEffect(() => {
+    if (!user) return;
+    const loadInvoices = async () => {
+      try {
+        setInvLoading(true);
+        const res = await fetchCustomerInvoices({
+          page: invPage,
+          per_page: invPerPage,
+        }); // optional: status: 'paid'
+        setInvoices(res.items);
+        setInvMeta(res.meta);
+      } catch (e) {
+        console.error(e);
+        setInvoices([]);
+        setInvMeta({
+          current_page: 1,
+          per_page: invPerPage,
+          total: 0,
+          last_page: 1,
+        });
+      } finally {
+        setInvLoading(false);
+      }
+    };
+    loadInvoices();
+  }, [user, invPage, invPerPage]);
 
-  const getDaysUntilExpiry = (endDate: string) => {
+  // reset perpage ketika user berubah atau logout
+  useEffect(() => {
+    if (!user) {
+      setPage(1);
+      setInvPage(1);
+    }
+  }, [user]);
+
+  // komponen pagination
+  function Pagination({
+    meta,
+    onPageChange,
+  }: {
+    meta: { current_page: number; last_page: number } | null;
+    onPageChange: (p: number) => void;
+  }) {
+    if (!meta || meta.last_page <= 1) return null;
+    const { current_page, last_page } = meta;
+
+    const pages: number[] = [];
+    const start = Math.max(1, current_page - 2);
+    const end = Math.min(last_page, current_page + 2);
+    for (let i = start; i <= end; i++) pages.push(i);
+
+    return (
+      <div className="flex items-center justify-center gap-2 mt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={current_page <= 1}
+          onClick={() => onPageChange(current_page - 1)}
+        >
+          Prev
+        </Button>
+
+        {start > 1 && (
+          <>
+            <Button variant="outline" size="sm" onClick={() => onPageChange(1)}>
+              1
+            </Button>
+            {start > 2 && <span className="px-1 text-slate-500">…</span>}
+          </>
+        )}
+
+        {pages.map((p) => (
+          <Button
+            key={p}
+            variant={p === current_page ? "default" : "outline"}
+            size="sm"
+            onClick={() => onPageChange(p)}
+          >
+            {p}
+          </Button>
+        ))}
+
+        {end < last_page && (
+          <>
+            {end < last_page - 1 && (
+              <span className="px-1 text-slate-500">…</span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(last_page)}
+            >
+              {last_page}
+            </Button>
+          </>
+        )}
+
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={current_page >= last_page}
+          onClick={() => onPageChange(current_page + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  }
+
+  // summary card skeleton
+  function SummaryCardSkeleton() {
+    return (
+      <Card className="border-0 shadow-md">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4">
+            <Skeleton className="w-12 h-12 rounded-lg bg-slate-200" />
+            <div className="space-y-2">
+              <Skeleton className="h-6 w-10 bg-slate-200" />
+              <Skeleton className="h-4 w-24 bg-slate-200" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // skeleton mini product (dashboard)
+  function MiniProductSkeleton() {
+    return (
+      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-32 bg-slate-200" />
+          <Skeleton className="h-3 w-20 bg-slate-200" />
+        </div>
+        <div className="text-right space-y-2">
+          <Skeleton className="h-5 w-16 bg-slate-200" />
+          <Skeleton className="h-3 w-24 bg-slate-200" />
+        </div>
+      </div>
+    );
+  }
+
+  // skeleton loading my product
+  function ProductCardSkeleton() {
+    return (
+      <Card className="border-0 shadow-md">
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-start justify-between">
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-40 bg-slate-200" />
+              <Skeleton className="h-4 w-24 bg-slate-200" />
+            </div>
+            <div className="space-y-2 text-right">
+              <Skeleton className="h-6 w-16 bg-slate-200" />
+              <Skeleton className="h-5 w-24 bg-slate-200" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Skeleton className="h-10 bg-slate-200" />
+            <Skeleton className="h-10 bg-slate-200" />
+            <Skeleton className="h-10 bg-slate-200" />
+          </div>
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+            <Skeleton className="h-5 w-40 bg-slate-200" />
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-28 bg-slate-200" />
+              <Skeleton className="h-9 w-24 bg-slate-200" />
+              <Skeleton className="h-9 w-24 bg-slate-200" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // skeleton invoice
+  function InvoiceItemSkeleton() {
+    return (
+      <div className="flex items-center justify-between p-4 border border-slate-200 rounded-lg">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-lg bg-slate-200" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-40 bg-slate-200" />
+            <Skeleton className="h-3 w-56 bg-slate-200" />
+            <Skeleton className="h-3 w-28 bg-slate-200" />
+          </div>
+        </div>
+        <div className="text-right space-y-2">
+          <Skeleton className="h-5 w-24 bg-slate-200 ml-auto" />
+          <div className="flex items-center gap-2 justify-end">
+            <Skeleton className="h-6 w-14 bg-slate-200" />
+            <Skeleton className="h-8 w-8 rounded bg-slate-200" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // helpers format
+  const formatPrice = (price: number) =>
+    `IDR ${Number(price || 0).toLocaleString("id-ID")}`;
+  const formatDate = (dateString?: string | null) =>
+    dateString
+      ? new Date(dateString).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      : "-";
+
+  const getDaysUntilExpiry = (endDate?: string | null) => {
+    if (!endDate) return 0;
     const today = new Date();
     const expiry = new Date(endDate);
     const diffTime = expiry.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return <Badge className="bg-green-500 text-white">Active</Badge>;
-      case "expired":
-        return <Badge className="bg-red-500 text-white">Expired</Badge>;
-      case "trial":
-        return <Badge className="bg-blue-500 text-white">Trial</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  // Status badge untuk produk: gunakan is_currently_active
+  const getStatusBadge = (isActiveNow: boolean) =>
+    isActiveNow ? (
+      <Badge className="bg-green-500 text-white">Active</Badge>
+    ) : (
+      <Badge className="bg-red-500 text-white">Expired</Badge>
+    );
+
+  // Data untuk summary
+  const activeProducts = subscriptions.filter((s) => s.is_currently_active);
+  const nextRenewal =
+    activeProducts.length > 0
+      ? Math.min(
+          ...activeProducts
+            .map((s) => getDaysUntilExpiry(s.end_date))
+            .filter((n) => Number.isFinite(n))
+        )
+      : 0;
+  const outstandingInvoices = invoices.filter(
+    (i) => i.status === "pending"
+  ).length;
 
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge className="bg-green-500 text-white">Paid</Badge>;
+        return <Badge className="bg-green-500 text-white">PAID</Badge>;
       case "pending":
-        return <Badge className="bg-yellow-500 text-white">Pending</Badge>;
+        return <Badge className="bg-yellow-500 text-white">PENDING</Badge>;
       case "failed":
-        return <Badge className="bg-red-500 text-white">Failed</Badge>;
+        return <Badge className="bg-red-500 text-white">FAILED</Badge>;
+      case "expired":
+        return <Badge className="bg-slate-500 text-white">EXPIRED</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -239,15 +437,6 @@ export default function MyAccountPage() {
     { id: "profile", label: "Profile & Account Settings", icon: User },
     { id: "support", label: "Support & Help Center", icon: HelpCircle },
   ];
-
-  const activeProducts = subscriptions.filter((s) => s.status === "active");
-  const nextRenewal =
-    activeProducts.length > 0
-      ? Math.min(...activeProducts.map((s) => getDaysUntilExpiry(s.endDate)))
-      : 0;
-  const outstandingInvoices = invoices.filter(
-    (i) => i.status === "pending"
-  ).length;
 
   // actions (save user, logout, dll)
   const onSaveProfile = async () => {
@@ -289,31 +478,81 @@ export default function MyAccountPage() {
   if (loadingUser) {
     return (
       <div className="min-h-screen bg-slate-50">
+        {/* Header skeleton */}
         <div className="bg-white border-b border-slate-200 px-4 py-4">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-                Agile Store
-              </h1>
-              <span className="text-slate-400">|</span>
-              <span className="text-slate-600">My Account</span>
+              <div className="h-7 w-32 rounded bg-slate-200" />
+              <span className="text-slate-300">|</span>
+              <div className="h-5 w-24 rounded bg-slate-200" />
             </div>
-            <Button
-              variant="ghost"
-              className="text-slate-600 cursor-pointer"
-              onClick={onLogout}
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
+            <div className="h-9 w-24 rounded-md bg-slate-200" />
           </div>
         </div>
 
         <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
-          <Skeleton className="h-64 rounded-xl bg-muted" />
-          <div className="lg:col-span-3 space-y-4">
-            <Skeleton className="h-24 rounded-xl bg-muted" />
-            <Skeleton className="h-64 rounded-xl bg-muted" />
+          {/* Sidebar: hanya “nama” menu sebagai skeleton */}
+          <div className="lg:col-span-1">
+            <div className="border-0 shadow-md rounded-xl bg-white p-3 space-y-2">
+              {[...Array(6)].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg"
+                >
+                  <div className="h-5 w-5 rounded bg-slate-200" />
+                  <div className="h-4 w-40 rounded bg-slate-200" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Main: judul + 3 summary cards + mini list */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Title */}
+            <div className="space-y-2">
+              <div className="h-7 w-72 rounded bg-slate-200" />
+              <div className="h-4 w-64 rounded bg-slate-200" />
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[...Array(3)].map((_, i) => (
+                <div
+                  key={i}
+                  className="border-0 shadow-md rounded-xl bg-white p-6"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-slate-200" />
+                    <div className="space-y-2">
+                      <div className="h-6 w-10 rounded bg-slate-200" />
+                      <div className="h-4 w-28 rounded bg-slate-200" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Active Products mini list */}
+            <div className="border-0 shadow-md rounded-xl bg-white">
+              <div className="p-6 space-y-4">
+                <div className="h-5 w-36 rounded bg-slate-200" />
+                {[...Array(2)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
+                  >
+                    <div className="space-y-2">
+                      <div className="h-4 w-40 rounded bg-slate-200" />
+                      <div className="h-3 w-28 rounded bg-slate-200" />
+                    </div>
+                    <div className="text-right space-y-2">
+                      <div className="h-5 w-16 rounded bg-slate-200" />
+                      <div className="h-3 w-32 rounded bg-slate-200" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -336,57 +575,69 @@ export default function MyAccountPage() {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="border-0 shadow-md">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
-                      <CheckCircle className="h-6 w-6 text-green-500" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-slate-900">
-                        {activeProducts.length}
-                      </p>
-                      <p className="text-sm text-slate-600">Active Products</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              {subsLoading ? (
+                <>
+                  <SummaryCardSkeleton />
+                  <SummaryCardSkeleton />
+                  <SummaryCardSkeleton />
+                </>
+              ) : (
+                <>
+                  <Card className="border-0 shadow-md">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
+                          <CheckCircle className="h-6 w-6 text-green-500" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {activeProducts.length}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            Active Products
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="border-0 shadow-md">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                      <Calendar className="h-6 w-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-slate-900">
-                        {nextRenewal}
-                      </p>
-                      <p className="text-sm text-slate-600">
-                        Days Until Renewal
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="border-0 shadow-md">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
+                          <Calendar className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {nextRenewal}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            Days Until Renewal
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="border-0 shadow-md">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-lg">
-                      <AlertCircle className="h-6 w-6 text-red-500" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-slate-900">
-                        {outstandingInvoices}
-                      </p>
-                      <p className="text-sm text-slate-600">
-                        Outstanding Invoice
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="border-0 shadow-md">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-lg">
+                          <AlertCircle className="h-6 w-6 text-red-500" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold text-slate-900">
+                            {outstandingInvoices}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            Outstanding Invoice
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
             </div>
 
             {/* Active Products Mini List */}
@@ -395,32 +646,38 @@ export default function MyAccountPage() {
                 <CardTitle className="text-lg">Active Products</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {activeProducts.map((product) => (
-                  <div
-                    key={product.id}
-                    className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
-                  >
-                    <div>
-                      <h4 className="font-semibold text-slate-900">
-                        {product.productName}
-                      </h4>
-                      <p className="text-sm text-slate-600">
-                        {product.package} Plan
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      {getStatusBadge(product.status)}
-                      <p className="text-sm text-slate-600 mt-1">
-                        Expires: {formatDate(product.endDate)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {activeProducts.length === 0 && (
+                {subsLoading && (
+                  <>
+                    <MiniProductSkeleton />
+                  </>
+                )}
+                {!subsLoading && activeProducts.length === 0 && (
                   <p className="text-slate-600 text-center py-4">
                     No active products
                   </p>
                 )}
+                {!subsLoading &&
+                  activeProducts.map((p) => (
+                    <div
+                      key={p.order_id}
+                      className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
+                    >
+                      <div>
+                        <h4 className="font-semibold text-slate-900">
+                          {p.product.name || p.product.code}
+                        </h4>
+                        <p className="text-sm text-slate-600">
+                          {p.package.name || p.package.code} Plan
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        {getStatusBadge(true)}
+                        <p className="text-sm text-slate-600 mt-1">
+                          Expires: {formatDate(p.end_date)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
               </CardContent>
             </Card>
           </div>
@@ -439,94 +696,132 @@ export default function MyAccountPage() {
             </div>
 
             <div className="space-y-4">
-              {subscriptions.map((product) => (
-                <Card key={product.id} className="border-0 shadow-md">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-xl font-semibold text-slate-900">
-                          {product.productName}
-                        </h3>
-                        <p className="text-slate-600">{product.package} Plan</p>
-                      </div>
-                      <div className="text-right">
-                        {getStatusBadge(product.status)}
-                        <p className="text-lg font-bold text-slate-900 mt-1">
-                          {formatPrice(product.price)}
-                        </p>
-                      </div>
-                    </div>
+              {subsLoading && (
+                <>
+                  <ProductCardSkeleton />
+                  <ProductCardSkeleton />
+                  <ProductCardSkeleton />
+                </>
+              )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      <div>
-                        <p className="text-sm text-slate-600">Start Date</p>
-                        <p className="font-medium">
-                          {formatDate(product.startDate)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-600">End Date</p>
-                        <p className="font-medium">
-                          {formatDate(product.endDate)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-slate-600">Duration</p>
-                        <p className="font-medium">{product.duration} months</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                      {product.status === "active" && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <Clock className="h-4 w-4" />
-                            {getDaysUntilExpiry(product.endDate)} days remaining
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              className="bg-blue-600 hover:bg-blue-700"
-                              onClick={() =>
-                                window.open(product.appUrl, "_blank")
-                              }
-                            >
-                              <ExternalLink className="h-4 w-4 mr-2" />
-                              Open App
-                            </Button>
-                            <Button variant="outline">
-                              <RefreshCw className="h-4 w-4 mr-2" />
-                              Renew
-                            </Button>
-                            <Button variant="outline">
-                              <ArrowUpCircle className="h-4 w-4 mr-2" />
-                              Upgrade
-                            </Button>
-                          </div>
-                        </>
-                      )}
-
-                      {product.status === "expired" && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm text-red-600">
-                            <AlertCircle className="h-4 w-4" />
-                            Subscription expired
-                          </div>
-                          <div className="flex gap-2">
-                            <Button className="bg-blue-600 hover:bg-blue-700">
-                              <RefreshCw className="h-4 w-4 mr-2" />
-                              Renew
-                            </Button>
-                            <Button variant="outline">
-                              <ArrowUpCircle className="h-4 w-4 mr-2" />
-                              Upgrade
-                            </Button>
-                          </div>
-                        </>
-                      )}
-                    </div>
+              {!subsLoading && subscriptions.length === 0 && (
+                <Card className="border-0 shadow-md">
+                  <CardContent className="p-6 text-center text-slate-600">
+                    You have no paid products yet.
                   </CardContent>
                 </Card>
-              ))}
+              )}
+
+              {!subsLoading &&
+                subscriptions.map((p) => {
+                  const isActiveNow = p.is_currently_active;
+                  const remaining = getDaysUntilExpiry(p.end_date);
+                  const durationLabel = p.duration.name || p.duration.code; // ex: "12 Bulan"
+                  const packageLabel = p.package.name || p.package.code;
+                  const productLabel = p.product.name || p.product.code;
+
+                  return (
+                    <Card key={p.order_id} className="border-0 shadow-md">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h3 className="text-xl font-semibold text-slate-900">
+                              {productLabel}
+                            </h3>
+                            <p className="text-slate-600">
+                              {packageLabel} Plan
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            {getStatusBadge(isActiveNow)}
+                            <p className="text-lg font-bold text-slate-900 mt-1">
+                              {formatPrice(p.total)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <p className="text-sm text-slate-600">Start Date</p>
+                            <p className="font-medium">
+                              {formatDate(p.start_date)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600">End Date</p>
+                            <p className="font-medium">
+                              {formatDate(p.end_date)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600">Duration</p>
+                            <p className="font-medium">{durationLabel}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                          {isActiveNow ? (
+                            <>
+                              <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <Clock className="h-4 w-4" />
+                                {remaining >= 0
+                                  ? `${remaining} days remaining`
+                                  : `${remaining} days remaining`}
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  className="bg-blue-600 hover:bg-blue-700"
+                                  onClick={() => {
+                                    // TODO: open actual app URL jika ada di product metadata
+                                    // sementara: buka dashboard umum
+                                    window.open("/my-account", "_blank");
+                                  }}
+                                >
+                                  <ExternalLink className="h-4 w-4 mr-2" />
+                                  Open App
+                                </Button>
+                                <Button variant="outline">
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Renew
+                                </Button>
+                                <Button variant="outline">
+                                  <ArrowUpCircle className="h-4 w-4 mr-2" />
+                                  Upgrade
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2 text-sm text-red-600">
+                                <AlertCircle className="h-4 w-4" />
+                                Subscription expired
+                              </div>
+                              <div className="flex gap-2">
+                                <Button className="bg-blue-600 hover:bg-blue-700">
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Renew
+                                </Button>
+                                <Button variant="outline">
+                                  <ArrowUpCircle className="h-4 w-4 mr-2" />
+                                  Upgrade
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+
+              {/* Pagination */}
+              <Pagination
+                meta={meta}
+                onPageChange={(p) => {
+                  if (!meta) return;
+                  if (p >= 1 && p <= meta.last_page) setPage(p);
+                }}
+              />
             </div>
           </div>
         );
@@ -546,40 +841,63 @@ export default function MyAccountPage() {
             <Card className="border-0 shadow-md">
               <CardContent className="p-6">
                 <div className="space-y-4">
-                  {invoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="flex items-center justify-between p-4 border border-slate-200 rounded-lg"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center justify-center w-10 h-10 bg-slate-100 rounded-lg">
-                          <FileText className="h-5 w-5 text-slate-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">
-                            {invoice.id}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            {invoice.product} - {invoice.package}
-                          </p>
-                          <p className="text-sm text-slate-500">
-                            {formatDate(invoice.date)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-slate-900">
-                          {formatPrice(invoice.amount)}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {getPaymentStatusBadge(invoice.status)}
-                          <Button variant="ghost" size="sm">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                  {invLoading && (
+                    <>
+                      <InvoiceItemSkeleton />
+                      <InvoiceItemSkeleton />
+                      <InvoiceItemSkeleton />
+                    </>
+                  )}
+
+                  {!invLoading && invoices.length === 0 && (
+                    <div className="text-center text-slate-600 py-6">
+                      No invoices found.
                     </div>
-                  ))}
+                  )}
+
+                  {!invLoading &&
+                    invoices.map((invoice) => (
+                      <div
+                        key={invoice.order_id}
+                        className="flex items-center justify-between p-4 border border-slate-200 rounded-lg"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center justify-center w-10 h-10 bg-slate-100 rounded-lg">
+                            <FileText className="h-5 w-5 text-slate-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900">
+                              {invoice.midtrans_order_id}
+                            </p>
+                            <p className="text-sm text-slate-600">
+                              {invoice.product_name} - {invoice.package_name}
+                            </p>
+                            <p className="text-sm text-slate-500">
+                              {formatDate(invoice.date)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-slate-900">
+                            {formatPrice(invoice.amount)}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {getPaymentStatusBadge(invoice.status)}
+                            <Button variant="ghost" size="sm">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {/* Pagination */}
+                  <Pagination
+                    meta={invMeta}
+                    onPageChange={(p) => {
+                      if (!invMeta) return;
+                      if (p >= 1 && p <= invMeta.last_page) setInvPage(p);
+                    }}
+                  />
                 </div>
               </CardContent>
             </Card>

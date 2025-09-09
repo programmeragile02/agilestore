@@ -321,3 +321,79 @@ export async function createOrder(payload: CreateOrderPayload): Promise<CreateOr
   if (data?.success === false) throw new Error(data?.message || "Failed to create order");
   return data.data as CreateOrderResponse;
 }
+
+// order detail
+export async function getOrder(id: string) {
+  const res = await api.get(`orders/${id}`);
+  return res.data;
+}
+
+// refresh status order
+export async function refreshOrderStatus(id: string) {
+  const res = await api.post(`orders/${id}/refresh-status`);
+  return res.data;
+}
+
+// my-products
+export type MyProductsItem = {
+  order_id: string;
+  midtrans_order_id: string;
+  status: "paid" | "expired" | "failed" | string;
+  is_active: boolean;              // flag DB
+  is_currently_active: boolean;    // hasil hitung now()
+  price: number;
+  discount: number;
+  total: number;
+  currency: string;
+  start_date: string | null;
+  end_date: string | null;
+  product: { code: string; name?: string | null };
+  package: { code: string; name?: string | null };
+  duration: { code: string; name?: string | null };
+};
+
+export type MyProductsResponse = {
+  items: MyProductsItem[];
+  meta: { current_page: number; per_page: number; total: number; last_page: number };
+};
+
+/**
+ * GET /api/customer/my-products
+ * @param params.active 1 = hanya yang masih aktif sekarang, 0 = yang sudah tidak aktif, undefined = semua yang paid
+ * @param params.page
+ * @param params.per_page
+ */
+export async function fetchMyProducts(params?: { active?: 0 | 1; page?: number; per_page?: number }): Promise<MyProductsResponse> {
+  const { data } = await api.get("customer/my-products", { params });
+  if (data?.success === false) throw new Error(data?.message || "Failed to fetch my products");
+  // bentuk data: { success, data: { items, meta } }
+  return data.data as MyProductsResponse;
+}
+
+// Invoice
+export type InvoiceItem = {
+  order_id: string;
+  midtrans_order_id: string;
+  date: string;             // "2025-01-15"
+  product_name: string;
+  package_name: string;
+  amount: number;
+  currency: string;
+  status: "paid" | "pending" | "failed" | "expired" | string;
+};
+
+export type InvoicesResponse = {
+  items: InvoiceItem[];
+  meta: { current_page: number; per_page: number; total: number; last_page: number };
+};
+
+/** GET /api/customer/invoices?status=&page=&per_page= */
+export async function fetchCustomerInvoices(params?: {
+  status?: "paid" | "pending" | "failed" | "expired";
+  page?: number;
+  per_page?: number;
+}): Promise<InvoicesResponse> {
+  const { data } = await api.get("customer/invoices", { params });
+  if (data?.success === false) throw new Error(data?.message || "Failed to fetch invoices");
+  return data.data as InvoicesResponse;
+}

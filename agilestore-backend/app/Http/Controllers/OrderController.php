@@ -185,6 +185,81 @@ class OrderController extends Controller
         ], 201);
     }
 
+    // refresh status agar sinkron dengan midtrans -> db
+    public function refreshStatus(string $id, MidtransService $midtrans)
+    {
+        /** @var \App\Models\Customer $auth */
+        $auth = auth('customer-api')->user();
+        if (!$auth) abort(401);
+
+        $order = Order::findOrFail($id);
+
+        // pastikan order milik user ini
+        if ($order->customer_id !== (string)$auth->id) {
+            abort(403, 'Forbidden');
+        }
+
+        // kalau sudah final, tidak usah panggil Midtrans lagi
+        if ($order->status !== 'pending' || !$order->midtrans_order_id) {
+            return response()->json([
+                'success' => true,
+                'data'    => ['status' => $order->status]
+            ]);
+        }
+
+        // --- panggil Midtrans ---
+        $res = $midtrans->status($order->midtrans_order_id); // stdClass dari service
+
+        $status      = $res->transaction_status ?? null;   // settlement|capture|pending|deny|cancel|expire
+        $paymentType = $res->payment_type ?? null;
+        $fraudStatus = $res->fraud_status ?? null;
+
+        // mapping status
+        switch ($status) {
+            case 'capture':
+                if ($paymentType === 'credit_card' && $fraudStatus === 'challenge') {
+                    $order->status    = 'pending';
+                    $order->is_active = false;
+                } else {
+                    $order->status  = 'paid';
+                    $order->paid_at = now();
+                    // kalau mau, panggil applyActivePeriod($order) di sini
+                }
+                break;
+
+            case 'settlement':
+                $order->status  = 'paid';
+                $order->paid_at = now();
+                // applyActivePeriod($order) kalau dipakai
+                break;
+
+            case 'pending':
+                $order->status    = 'pending';
+                $order->is_active = false;
+                break;
+
+            case 'deny':
+            case 'cancel':
+                $order->status    = 'failed';
+                $order->is_active = false;
+                break;
+
+            case 'expire':
+                $order->status    = 'expired';
+                $order->is_active = false;
+                break;
+        }
+
+        // snapshot tambahan (opsional)
+        $order->payment_status = $status;
+        $order->payment_type   = $paymentType;
+        if (!empty($res->transaction_id)) {
+            $order->midtrans_transaction_id = $res->transaction_id;
+        }
+
+        $order->save();
+    }
+
     public function show(string $id)
     {
         $order = Order::with('customer')->findOrFail($id);
@@ -216,12 +291,150 @@ class OrderController extends Controller
                 'qris_data'         => $order->qris_data,
                 'paid_at'           => $order->paid_at,
                 'created_at'        => $order->created_at,
+
+                'start_date'        => optional($order->start_date)->toDateString(),
+                'end_date'          => optional($order->end_date)->toDateString(),
+                'is_active'         => (bool) $order->is_active,              // flag DB asli
+                'is_currently_active' => $order->is_currently_active,         // hasil hitung
                 
                 'customer'              => [
                     'id'        => (string) $order->customer_id,
                     'name'      => $order->customer_name,
                     'email'     => $order->customer_email,
                     'phone'     => $order->customer_phone,
+                ],
+            ],
+        ]);
+    }
+
+    public function myProducts(Request $req)
+    {
+        /** @var \App\Models\Customer|null $auth */
+        $auth = auth('customer-api')->user();
+        if (!$auth) abort(401, 'Unauthorized');
+
+        // Query dasar: order paid milik customer ini
+        $q = Order::query()
+            ->where('customer_id', $auth->id)
+            ->where('status', 'paid')
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at');
+
+        // Optional filter: ?active=1 hanya yang masih aktif sekarang, ?active=0 hanya yang tidak aktif sekarang
+        $active = $req->query('active');
+        if ($active !== null) {
+            $active = (string)$active === '1';
+            $today = now()->toDateString();
+
+            if ($active) {
+                $q->where('is_active', true)
+                ->where(function($qq) use ($today) {
+                    $qq->whereNull('end_date')
+                        ->orWhereDate('end_date', '>=', $today);
+                });
+            } else {
+                // tidak aktif sekarang
+                $q->where(function($qq) use ($today) {
+                    $qq->where('is_active', false)
+                    ->orWhere(function($qq2) use ($today) {
+                        $qq2->whereNotNull('end_date')
+                            ->whereDate('end_date', '<', $today);
+                    });
+                });
+            }
+        }
+
+        $perPage = (int) $req->query('per_page', 5);
+        $orders = $q->paginate($perPage);
+
+        // Bentuk payload ringkas untuk FE “My Products”
+        $items = collect($orders->items())->map(function (Order $o) {
+            return [
+                'order_id'           => (string) $o->id,
+                'midtrans_order_id'  => $o->midtrans_order_id,
+                'status'             => $o->status,               // paid (riwayat)
+                'is_active'          => (bool) $o->is_active,      // flag DB
+                'is_currently_active'=> $o->is_currently_active,   // hasil hitung now()
+                'price'              => (float) $o->price,
+                'discount'           => (float) $o->discount,
+                'total'              => (float) $o->total,
+                'currency'           => $o->currency,
+                'start_date'         => optional($o->start_date)->toDateString(),
+                'end_date'           => optional($o->end_date)->toDateString(),
+
+                'product' => [
+                    'code' => $o->product_code,
+                    'name' => $o->product_name,
+                ],
+                'package' => [
+                    'code' => $o->package_code,
+                    'name' => $o->package_name,
+                ],
+                'duration' => [
+                    'code' => $o->duration_code,
+                    'name' => $o->duration_name,
+                ],
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'items' => $items,
+                'meta'  => [
+                    'current_page' => $orders->currentPage(),
+                    'per_page'     => $orders->perPage(),
+                    'total'        => $orders->total(),
+                    'last_page'    => $orders->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    public function myInvoices(Request $req)
+    {
+        /** @var \App\Models\Customer|null $auth */
+        $auth = auth('customer-api')->user();
+        if (!$auth) abort(401, 'Unauthorized');
+
+        // filter: ?status=paid|pending|failed|expired  (opsional)
+        $status = $req->query('status');
+
+        $q = Order::query()
+            ->where('customer_id', $auth->id)
+            // umumnya invoice ditampilkan utk order yg pernah dibuat (paid/pending/failed/expired)
+            ->when($status, fn($qq) => $qq->where('status', $status))
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at');
+
+        $perPage = (int) $req->query('per_page', 10);
+        $orders  = $q->paginate($perPage);
+
+        $items = collect($orders->items())->map(function (Order $o) {
+            $date = $o->paid_at ?: $o->created_at;
+
+            return [
+                'order_id'          => (string) $o->id,
+                'midtrans_order_id' => $o->midtrans_order_id,            // "INV-20250115-000123"
+                'date'              => optional($date)->toDateString(),    // 2025-01-15
+                'product_name'      => $o->product_name ?: $o->product_code,
+                'package_name'      => $o->package_name ?: $o->package_code,
+                'amount'            => (float) $o->total,
+                'currency'          => $o->currency,
+                'status'            => $o->status,                         // paid|pending|failed|expired
+                // 'download_url'      => route('customer.invoice.download', ['id' => $o->id]),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'items' => $items,
+                'meta'  => [
+                    'current_page' => $orders->currentPage(),
+                    'per_page'     => $orders->perPage(),
+                    'total'        => $orders->total(),
+                    'last_page'    => $orders->lastPage(),
                 ],
             ],
         ]);

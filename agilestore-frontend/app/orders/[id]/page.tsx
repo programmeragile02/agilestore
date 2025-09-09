@@ -20,8 +20,9 @@ import {
   MessageCircle,
   Download,
   ArrowRight,
+  Wallet,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, getOrder, refreshOrderStatus } from "@/lib/api";
 import Link from "next/link";
 
 declare global {
@@ -45,6 +46,7 @@ const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY!;
 
 type Order = {
   id: string;
+  order_id?: string;
   midtrans_order_id: string;
   snap_token: string;
   status: "pending" | "paid" | "failed" | "expired";
@@ -143,6 +145,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [opening, setOpening] = useState(false);
 
@@ -150,6 +153,8 @@ export default function OrderDetailPage() {
     if (!order?.snap_token) return; // pastikan token ada
     if (!window.snap?.pay) return; // pastikan script sudah loaded
     setOpening(true);
+    if (pollRef.current) clearInterval(pollRef.current); // optional stop
+
     window.snap.pay(order.snap_token, {
       onSuccess: () => {
         /* optional: reload order */
@@ -161,7 +166,8 @@ export default function OrderDetailPage() {
         /* tampilkan toast error */
       },
       onClose: () => {
-        /* user menutup popup */
+        // optional: trigger sekali refresh setelah ditutup
+        refreshStatus();
       },
     });
     setOpening(false);
@@ -180,21 +186,24 @@ export default function OrderDetailPage() {
         return {
           icon: <CheckCircle2 className="h-12 w-12 text-green-600" />,
           title: "Payment Successful",
-          subtitle: "Thank you! We’ve activated your account and sent details via Email and WhatsApp",
+          subtitle:
+            "Thank you! We’ve activated your account and sent details via Email and WhatsApp",
           badgeClass: "bg-green-100 text-green-800",
         };
       case "failed":
         return {
           icon: <XCircle className="h-12 w-12 text-red-600" />,
           title: "Payment Failed",
-          subtitle: "We encountered an issue processing your payment. Don't worry, no charges were made to your account.",
+          subtitle:
+            "We encountered an issue processing your payment. Don't worry, no charges were made to your account.",
           badgeClass: "bg-red-100 text-red-800",
         };
       case "expired":
         return {
           icon: <XCircle className="h-12 w-12 text-gray-500" />,
           title: "Payment Expired",
-          subtitle: "Your payment window has expired. Please create a new order to continue.",
+          subtitle:
+            "Your payment window has expired. Please create a new order to continue.",
           badgeClass: "bg-gray-200 text-gray-800",
         };
       // default = pending
@@ -203,30 +212,66 @@ export default function OrderDetailPage() {
           icon: <Clock className="h-12 w-12 text-yellow-500" />,
           title: "Complete Your Payment",
           badgeClass: "bg-yellow-100 text-yellow-800",
+          subtitle:
+            "We’re waiting for your payment confirmation from Midtrans. This page updates automatically.",
         };
     }
   }
 
   // load API Order details
   const load = async () => {
-    const { data } = await api.get(`orders/${id}`);
-    setOrder(data?.data);
+    const res = await getOrder(id);
+    setOrder(res?.data);
     setLoading(false);
   };
 
   useEffect(() => {
     load(); // first fetch
-    // polling setiap 4s sampai final
-    pollRef.current = setInterval(load, 4000);
-    return () => clearInterval(pollRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // polling refresh-status kalau pending
+  useEffect(() => {
+    if (!order || order.status !== "pending") return;
+
+    let tries = 0;
+    const maxTries = 5; // ~1 menit jika interval 5s
+    pollRef.current = setInterval(async () => {
+      tries++;
+      await refreshStatus(); // panggil endpoint refresh-status
+      if (tries >= maxTries) clearInterval(pollRef.current);
+    }, 15000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.status]);
 
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
       // (opsional) tampilkan toast keberhasilan
     } catch {}
+  };
+
+  // refresh status order
+  const refreshStatus = async () => {
+    const currentId = order?.id ?? order?.order_id; // <— gunakan salah satu
+    if (!currentId) return;
+
+    try {
+      setRefreshing(true);
+      const res = await refreshOrderStatus(currentId);
+      const newStatus = res?.data?.status;
+      if (newStatus && order && newStatus !== order.status) {
+        setOrder({ ...order, status: newStatus });
+      } else {
+        await load();
+      }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   if (loading || !order) {
@@ -245,7 +290,7 @@ export default function OrderDetailPage() {
   }
 
   // Pending view (menunggu pembayaran) — hanya tampil jika belum final
-  const showPending = order.status === searchParams.get("status");
+  const showPending = order.status === "pending";
 
   const meta = getStatusMeta(order?.status);
   const isPending = order?.status === "pending";
@@ -270,18 +315,10 @@ export default function OrderDetailPage() {
                 <h1 className="text-3xl font-bold text-slate-900 mb-2">
                   Complete Your Payment
                 </h1>
-                <p className="text-slate-600">
+                <p className="text-lg font-semibold text-slate-700 mb-2">
                   We’re waiting for your payment confirmation from Midtrans.
                   This page updates automatically.
                 </p>
-
-                <Button
-                  onClick={openSnap}
-                  disabled={!order?.snap_token || opening}
-                  className="mt-2 bg-indigo-600 hover:bg-indigo-700"
-                >
-                  {opening ? "Opening..." : "Bayar sekarang"}
-                </Button>
               </>
             ) : (
               <>
@@ -373,7 +410,7 @@ export default function OrderDetailPage() {
 
               {/* Instruksi khusus metode pembayaran */}
               {showPending && order.payment_type === "bank_transfer" && (
-                <div className="bg-slate-50 rounded-lg p-4">
+                <div className="bg-slate-50 rounded-lg p-4 mt-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Banknote className="h-5 w-5 text-slate-500" />
                     <div className="font-semibold">Virtual Account</div>
@@ -427,7 +464,7 @@ export default function OrderDetailPage() {
                 )}
 
               {showPending && (
-                <div className="flex items-center justify-center gap-2 text-slate-500">
+                <div className="flex items-center justify-center gap-2 text-slate-500 mt-4">
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   <span>Waiting for payment confirmation...</span>
                 </div>
@@ -436,13 +473,110 @@ export default function OrderDetailPage() {
           </Card>
 
           {order.status === "pending" && (
-            <Button
-              onClick={openSnap}
-              disabled={!order?.snap_token || opening}
-              className="mt-2 bg-indigo-600 hover:bg-indigo-700"
-            >
-              {opening ? "Opening..." : "Pay Now"}
-            </Button>
+            <>
+              {/* Secondary Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <Button
+                  onClick={openSnap}
+                  size="lg"
+                  disabled={!order?.snap_token || opening}
+                  className="bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                >
+                  <Wallet className="h-4 w-4 mr-2" />
+                  {opening ? "Opening..." : "Pay Now"}
+                </Button>
+
+                {/* refresh status */}
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={refreshing}
+                  onClick={refreshStatus}
+                  className="border-indigo-600 hover:bg-indigo-600 bg-transparent cursor-pointer"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-2 ${
+                      refreshing ? "animate-spin" : ""
+                    }`}
+                  />
+                  {refreshing ? "Refreshing…" : "Refresh Status"}
+                </Button>
+
+                <div className="col-span-full flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    asChild
+                    className="border-slate-300 hover:bg-indigo-600 bg-transparent"
+                  >
+                    <Link href="/support">
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Contact Support
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {order.status === "expired" && (
+            <>
+              {/* Secondary Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <Button
+                  size="lg"
+                  asChild
+                  className="bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                >
+                  <Link href="/products">
+                    <Wallet className="h-4 w-4 mr-2" />
+                    New Order
+                  </Link>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="lg"
+                  asChild
+                  className="border-slate-300 hover:bg-indigo-600 bg-transparent"
+                >
+                  <Link href="/support">
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Contact Support
+                  </Link>
+                </Button>
+              </div>
+            </>
+          )}
+
+          {order.status === "failed" && (
+            <>
+              {/* Secondary Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <Button
+                  size="lg"
+                  asChild
+                  className="bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                >
+                  <Link href="/products">
+                    <Wallet className="h-4 w-4 mr-2" />
+                    New Order
+                  </Link>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="lg"
+                  asChild
+                  className="border-slate-300 hover:bg-indigo-600 bg-transparent"
+                >
+                  <Link href="/support">
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Contact Support
+                  </Link>
+                </Button>
+              </div>
+            </>
           )}
 
           {order.status === "paid" &&
@@ -453,7 +587,7 @@ export default function OrderDetailPage() {
                   <Button
                     asChild
                     size="lg"
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold shadow-lg"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 shadow-lg"
                   >
                     <Link href="/my-account">
                       View Dashboard
@@ -468,7 +602,7 @@ export default function OrderDetailPage() {
                     variant="outline"
                     size="lg"
                     // onClick={handleDownloadInvoice}
-                    className="border-slate-300 bg-transparent"
+                    className="border-slate-300 hover:bg-indigo-600 bg-transparent cursor-pointer"
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Download Invoice
@@ -478,7 +612,7 @@ export default function OrderDetailPage() {
                     variant="outline"
                     size="lg"
                     asChild
-                    className="border-slate-300 bg-transparent"
+                    className="border-slate-300 hover:bg-indigo-600 bg-transparent"
                   >
                     <Link href="/support">
                       <MessageCircle className="h-4 w-4 mr-2" />

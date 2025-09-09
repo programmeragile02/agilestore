@@ -3,6 +3,7 @@
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CustomerAuthController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\Payments\MidtransWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,12 @@ Route::prefix('customer')->group(function () {
         Route::post('/profile-photo',   [CustomerAuthController::class, 'updateProfilePhoto']);
         Route::delete('/profile-photo', [CustomerAuthController::class, 'deleteProfilePhoto']);
         Route::put('/change-password',  [CustomerAuthController::class, 'changePassword']);
+
+        // list product customer yang dibeli
+        Route::get('my-products', [OrderController::class, 'myProducts']);
+
+        // list invoice
+        Route::get('invoices',    [OrderController::class, 'myInvoices']);
     });
 });
 
@@ -42,6 +49,9 @@ Route::middleware('auth:customer-api')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);  // create + snap token
     Route::get('/orders/{id}', [OrderController::class, 'show']); // detail order
 
+    // refresh status payment
+    Route::post('/orders/{id}/refresh-status', [OrderStatusController::class, 'refresh'])
+    ->middleware(['throttle:10,1']);
     // terima callback dari warehouse ketika provisioning ok
     // Route::post('/warehouse/callback', [WarehouseCallbackController::class, 'handle']);
 });
