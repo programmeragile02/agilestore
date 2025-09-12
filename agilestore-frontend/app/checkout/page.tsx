@@ -44,25 +44,26 @@ import {
   fetchProducts,
   fetchProductDetail,
   getCustomerMe,
-  createOrder,
+  createPurchaseOrder,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { ensureSnap, openSnap } from "@/lib/midtrans";
 
-declare global {
-  interface Window {
-    snap?: {
-      pay: (
-        token: string,
-        opts?: {
-          onSuccess?: (res: any) => void;
-          onPending?: (res: any) => void;
-          onError?: (err: any) => void;
-          onClose?: () => void;
-        }
-      ) => void;
-    };
-  }
-}
+// declare global {
+//   interface Window {
+//     snap?: {
+//       pay: (
+//         token: string,
+//         opts?: {
+//           onSuccess?: (res: any) => void;
+//           onPending?: (res: any) => void;
+//           onError?: (err: any) => void;
+//           onClose?: () => void;
+//         }
+//       ) => void;
+//     };
+//   }
+// }
 
 // ============================================================================
 // TYPES (mengikuti payload backend kamu)
@@ -1061,58 +1062,22 @@ function CheckoutContent() {
       if (!duration_code) throw new Error("Durasi tidak valid.");
 
       // panggil backend: POST /orders → dapat { order_id, snap_token }
-      const { order_id, snap_token } = await createOrder({
+      const { order_id, snap_token } = await createPurchaseOrder({
         product_code: product,
         package_code: pkg,
         duration_code,
       });
 
-      // pastikan script snap sudah siap
-      if (!window.snap || typeof window.snap.pay !== "function") {
-        throw new Error("Midtrans Snap tidak tersedia. Coba reload halaman.");
-      }
+      // snap window
+      await ensureSnap();
+      openSnap(snap_token, order_id);
 
-      // jalankan popup Snap
-      window.snap.pay(snap_token, {
-        onSuccess: () => {
-          // capture/settlement (kartu) → sukses
-          window.location.href = `/orders/${order_id}?status=success`;
-        },
-        onPending: () => {
-          // VA/QRIS biasanya pending dulu
-          window.location.href = `/orders/${order_id}?status=pending`;
-        },
-        onError: () => {
-          window.location.href = `/orders/${order_id}?status=failed`;
-        },
-        onClose: () => {
-          // user tutup popup tanpa bayar
-          window.location.href = `/orders/${order_id}?status=closed`;
-        },
-      });
     } catch (err) {
       console.error(err);
       toast({ title: "Failed Order" });
     } finally {
       setIsPlacing(false);
     }
-
-    // // Di sini biasanya kirim ke endpoint /orders/create (belum dispesifikkan)
-    // // Untuk demo: simpan ke localStorage lalu redirect
-    // const orderId = `ORD-${Date.now()}`;
-    // const payload = {
-    //   orderId,
-    //   product_code: checkoutData.plan.product,
-    //   package_code: checkoutData.plan.package,
-    //   months: checkoutData.plan.duration,
-    //   currency: checkoutData.plan.currency,
-    //   tax_mode: checkoutData.plan.taxMode,
-    //   voucher_code: checkoutData.voucher.code || undefined,
-    //   contact: checkoutData.contact,
-    //   payment_method: checkoutData.payment.method,
-    // };
-    // localStorage.setItem("orderData", JSON.stringify(payload));
-    // router.replace(`/order-success?orderId=${orderId}`);
   };
 
   return (

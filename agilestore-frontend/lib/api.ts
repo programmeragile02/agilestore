@@ -16,16 +16,6 @@ export const api = axios.create({
   },
 });
 
-// Instance untuk API internal Next.js (produk/pricing/checkout/notify)
-export const nextApi = axios.create({
-  baseURL: "", // relative ke Next app
-  withCredentials: false,
-  headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  },
-});
-
 // ---------- Token helpers ----------
 export function setCustomerToken(token: string | null) {
   if (typeof window === "undefined") return;
@@ -106,57 +96,6 @@ api.interceptors.response.use(
   }
 );
 
-// export interface Product {
-//   id: number;
-//   name: string;
-//   slug: string;
-//   shortDescription: string;
-//   longDescription: string;
-//   heroImage: string;
-//   category: string;
-//   features: string[];
-//   packages: string[];
-//   durations: number[];
-//   status: string;
-// }
-
-// export interface PricingPackage {
-//   package: string;
-//   name: string;
-//   description: string;
-//   features: string[];
-//   pricing: Record<number, number>;
-// }
-
-// export interface CheckoutData {
-//   contact: {
-//     fullName: string;
-//     email: string;
-//     phone: string;
-//     company?: string;
-//   };
-//   plan: {
-//     product: string;
-//     package: string;
-//     duration: number;
-//     currency: string;
-//     taxMode: "inclusive" | "exclusive";
-//   };
-//   payment: {
-//     method: "card" | "bank_transfer" | "ewallet";
-//     cardDetails?: {
-//       number: string;
-//       expiry: string;
-//       cvv: string;
-//     };
-//   };
-//   voucher?: {
-//     code: string;
-//     discount: number;
-//   };
-//   amount: number;
-// }
-
 // ===============================
 // FUNGSI PRODUK/PRICING/CHECKOUT/ORDER/NOTIFY
 // ===============================
@@ -176,8 +115,15 @@ export const fetchProductDetail = async (productCode: string) => {
   return data.data
 }
 
+// fetch landing page
+export async function fetchLandingPage(productCode: string) {
+  const {data} = await api.get(`catalog/products/landing/${productCode}`, {
+  });
+  return data?.data ?? data;// konsisten dengan pola kamu
+}
+
 // ===============================
-// CUSTOMER AUTH (Laravel 12 - sesuai controller kamu)
+// CUSTOMER AUTH
 // ===============================
 
 export interface CustomerUser {
@@ -302,23 +248,77 @@ export async function resetCustomerPassword(payload: { email: string; token: str
 }
 
 // order
-export type CreateOrderPayload = {
+// export type CreateOrderPayload = {
+//   product_code: string;
+//   package_code: string;
+//   duration_code: string; // "M1" | "M6" | "M12"
+// };
+
+// export type CreateOrderResponse = {
+//   order_id: string;
+//   snap_token: string;
+//   total: number;
+//   currency: string;
+//   status: string;
+// };
+
+// export async function createOrder(payload: CreateOrderPayload): Promise<CreateOrderResponse> {
+//   const { data } = await api.post("orders", payload);
+//   if (data?.success === false) throw new Error(data?.message || "Failed to create order");
+//   return data.data as CreateOrderResponse;
+// }
+
+// --- types umum (ORDER)
+export type OrderIntent = "purchase" | "renew" | "upgrade";
+
+export type CreatePurchasePayload = {
   product_code: string;
   package_code: string;
-  duration_code: string; // "M1" | "M6" | "M12"
+  duration_code: string;
+};
+
+export type CreateRenewPayload = {
+  base_order_id: string;
+  product_code: string;
+  package_code: string;
+  duration_code: string;
+};
+
+export type CreateUpgradePayload = {
+  base_order_id: string;      // id UUID order sebelumnya
+  product_code: string;
+  package_code: string;   // paket tujuan
+  // kalau in-place & periode tidak berubah, backend bisa abaikan durasi;
+  // tapi kalau mau tetap kirim:
+  duration_code?: string;
 };
 
 export type CreateOrderResponse = {
   order_id: string;
+  midtrans_order_id: string;
   snap_token: string;
   total: number;
   currency: string;
   status: string;
 };
 
-export async function createOrder(payload: CreateOrderPayload): Promise<CreateOrderResponse> {
+// New order (Purchase)
+export async function createPurchaseOrder(payload: CreatePurchasePayload) {
   const { data } = await api.post("orders", payload);
-  if (data?.success === false) throw new Error(data?.message || "Failed to create order");
+  if (data?.success === false) throw new Error(data?.message || "Failed to create purchase order");
+  return data.data as CreateOrderResponse;
+}
+
+// Renew (Perpanjangan)
+export async function createRenewOrder(payload: CreateRenewPayload) {
+  const { data } = await api.post("orders/renew", payload);
+  if (data?.success === false) throw new Error(data?.message || "Failed to create renew order");
+  return data.data as CreateOrderResponse;
+}
+
+export async function createUpgradeOrder(payload: CreateUpgradePayload) {
+  const { data } = await api.post("orders/upgrade", payload);
+  if (data?.success === false) throw new Error(data?.message || "Failed to create upgrade order");
   return data.data as CreateOrderResponse;
 }
 
@@ -380,6 +380,8 @@ export type InvoiceItem = {
   amount: number;
   currency: string;
   status: "paid" | "pending" | "failed" | "expired" | string;
+  intent: string;
+  end_date: string | null;
 };
 
 export type InvoicesResponse = {
@@ -396,4 +398,38 @@ export async function fetchCustomerInvoices(params?: {
   const { data } = await api.get("customer/invoices", { params });
   if (data?.success === false) throw new Error(data?.message || "Failed to fetch invoices");
   return data.data as InvoicesResponse;
+}
+
+// subscriptions
+export type SubscriptionsItem = {
+  subscription_id: string;
+  product: { code: string; name?: string | null };
+  package: { code: string; name?: string | null };
+  duration: { code: string; name?: string | null };
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;              // flag DB
+  is_currently_active: boolean;    // hasil hitung now()
+  status: string;
+  meta?: {
+    last_paid_order_id?: string; // <— pakai ini utk base_order_id
+  };
+}
+
+export type SubscriptionsResponse = {
+  items: SubscriptionsItem[];
+  meta: { current_page: number; per_page: number; total: number; last_page: number };
+};
+
+/**
+ * GET /api/customer/subscriptions
+ * @param params.active 1 = hanya yang masih aktif sekarang, 0 = yang sudah tidak aktif, undefined = semua yang paid
+ * @param params.page
+ * @param params.per_page
+ */
+export async function fetchSubscriptions(params?: { active?: 0 | 1; page?: number; per_page?: number }): Promise<SubscriptionsResponse> {
+  const { data } = await api.get("customer/subscriptions", { params });
+  if (data?.success === false) throw new Error(data?.message || "Failed to fetch subscriptions");
+  // bentuk data: { success, data: { items, meta } }
+  return data.data as SubscriptionsResponse;
 }

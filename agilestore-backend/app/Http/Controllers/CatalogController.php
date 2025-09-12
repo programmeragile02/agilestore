@@ -85,6 +85,7 @@ class CatalogController extends Controller
             ->where('status', 'active')
             ->orderBy('length')
             ->get([
+                'id',
                 'code',
                 'name',
                 'length',

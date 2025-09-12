@@ -4,15 +4,40 @@ namespace App\Services;
 
 use App\Models\MstDuration;
 use App\Models\MstProductPricelistItem;
+use App\Models\Order;
 use Carbon\Carbon;
 use Illuminate\Validation\ValidationException;
 
 class PricingService
 {
-    public function resolvePrice(string $productCode, string $packageCode, string $durationCode): array
-    {
+    /**
+     * Hitung harga akhir.
+     *
+     * @param  string $productCode
+     * @param  string $packageCode
+     * @param  string $durationCode
+     * @param  string $intent          purchase|renew|upgrade (default: purchase)
+     * @param  string|null $baseOrderId  diperlukan untuk upgrade (optional untuk renew jika mau proration khusus)
+     * @return array{
+     *   pricelist_item_id: string|null,
+     *   price: float,
+     *   discount: float,
+     *   proration_credit: float,
+     *   subtotal: float,
+     *   total: float,
+     *   currency: string
+     * }
+     */
+    public function resolvePrice(
+        string $productCode,
+        string $packageCode,
+        string $durationCode,
+        string $intent = 'purchase',
+        ?string $baseOrderId = null
+    ): array {
         $now = Carbon::now();
 
+        // --- Validasi duration ---
         $duration = MstDuration::where('code', $durationCode)->first();
         if (!$duration) {
             throw ValidationException::withMessages([
@@ -20,6 +45,7 @@ class PricingService
             ]);
         }
 
+        // --- Ambil item pricelist yang masih berlaku ---
         $item = MstProductPricelistItem::query()
             ->whereHas('header', function ($q) use ($productCode) {
                 $q->where('product_code', $productCode);
@@ -34,22 +60,73 @@ class PricingService
             })
             ->orderByDesc('effective_start')
             ->first();
-        
+
         if (!$item) {
             throw ValidationException::withMessages([
                 'pricing' => "Harga tidak ditemukan untuk kombinasi ($productCode / $packageCode / $durationCode).",
             ]);
         }
 
+        $currency = optional($item->header)->currency ?: 'IDR';
         $price    = (float) $item->price;
         $discount = (float) $item->discount;
-        $total    = max(0, $price - $discount);
-        $currency = optional($item->header)->currency ?: 'IDR';
+
+        // --- Default (purchase/renew tanpa proration) ---
+        $prorationCredit = 0.0;
+
+        if ($intent === 'upgrade' && $baseOrderId) {
+            $base = Order::find($baseOrderId);
+
+            // Validasi dasar base order
+            if (
+                !$base ||
+                $base->status !== 'paid' ||
+                $base->product_code !== $productCode
+            ) {
+                throw ValidationException::withMessages([
+                    'base_order_id' => 'Order dasar untuk upgrade tidak valid.',
+                ]);
+            }
+
+            // kalau misal pakai prorata
+            // // Hitung nilai sisa masa aktif (pro-rata harian dari TOTAL base)
+            // // start/end di model dicast ke 'date' → Carbon
+            // $today      = now()->startOfDay();
+            // $baseStart  = $base->start_date?->copy()->startOfDay();
+            // $baseEnd    = $base->end_date?->copy()->startOfDay();
+
+            // if ($baseStart && $baseEnd && $baseEnd->gte($baseStart)) {
+            //     // Total hari original (inklusif)
+            //     $totalDaysOriginal = $baseStart->diffInDays($baseEnd) + 1;
+
+            //     // Sisa hari mulai hari ini (inklusif), kalau sudah lewat → 0
+            //     $remainingDays = $baseEnd->gte($today)
+            //         ? ($today->diffInDays($baseEnd) + 1)
+            //         : 0;
+
+            //     if ($totalDaysOriginal > 0 && $remainingDays > 0) {
+            //         $baseTotal = (float) $base->total; // gunakan total yang dibayar
+            //         $perDay    = $baseTotal / $totalDaysOriginal;
+            //         $prorationCredit = round($perDay * $remainingDays, 2);
+            //         // Jangan pernah melebihi total harga baru
+            //         if ($prorationCredit > $price) {
+            //             $prorationCredit = $price;
+            //         }
+            //     }
+            // }
+        }
+
+        // Subtotal sebelum credit
+        $subtotal = max(0, $price - $discount);
+        // Total akhir setelah credit
+        $total    = max(0, $subtotal - $prorationCredit);
 
         return [
             'pricelist_item_id' => $item->id,
             'price'             => $price,
             'discount'          => $discount,
+            'proration_credit'  => $prorationCredit,
+            'subtotal'          => $subtotal,
             'total'             => $total,
             'currency'          => $currency,
         ];

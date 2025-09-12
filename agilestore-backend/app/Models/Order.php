@@ -26,8 +26,13 @@ class Order extends Model
         'price','discount','total','currency',
         'status','payment_status','paid_at',
 
+        'intent',
+        'base_order_id',
+
         'midtrans_order_id','midtrans_transaction_id','payment_type',
         'va_number','bank','permata_va_number','qris_data','snap_token',
+
+        'is_active','start_date','end_date',
 
         'meta',
     ];
@@ -40,8 +45,10 @@ class Order extends Model
         'meta'    => 'array',
 
         'is_active'  => 'boolean',
-        'start_date' => 'datetime',
-        'end_date'   => 'datetime',
+        'start_date' => 'date',
+        'end_date'   => 'date',
+
+        'provision_notified_at' => 'datetime'
     ];
 
     // Accessor: is_currently_active (tanpa tulis ke DB)
@@ -61,11 +68,16 @@ class Order extends Model
 
     public function getIsCurrentlyActiveAttribute(): bool
     {
-        // Aturan: aktif jika flag true dan belum lewat end_date (inclusive)
-        $today = now()->startOfDay();
-        $end   = $this->end_date instanceof Carbon ? $this->end_date->copy()->startOfDay() : null;
+        if (!$this->is_active) return false;
 
-        return (bool) $this->is_active && (is_null($end) || $end->greaterThanOrEqualTo($today));
+        $today = now()->startOfDay();
+        // pakai optional() agar aman saat end_date null
+        $end = optional($this->end_date)->copy()->startOfDay();
+
+        // jika end_date null → dianggap aktif
+        if ($end === null) return true;
+
+        return $end->greaterThanOrEqualTo($today);
     }
 
     // Optional: scope buat query "yang aktif sekarang"
@@ -77,5 +89,15 @@ class Order extends Model
                      $qq->whereNull('end_date')
                         ->orWhereDate('end_date', '>=', $today);
                  });
+    }
+
+    public function baseOrder()
+    {
+        return $this->belongsTo(self::class, 'base_order_id');
+    }
+
+    public function renewals()
+    {
+        return $this->hasMany(self::class, 'base_order_id');
     }
 }

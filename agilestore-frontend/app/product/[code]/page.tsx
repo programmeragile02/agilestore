@@ -40,7 +40,11 @@ import {
   Users,
 } from "lucide-react";
 
-import { fetchProductDetail, getCustomerToken } from "@/lib/api";
+import {
+  fetchLandingPage,
+  fetchProductDetail,
+  getCustomerToken,
+} from "@/lib/api";
 
 import {
   Dialog,
@@ -94,6 +98,35 @@ type BackendPayload = {
   }>;
 };
 
+type LandingSection = {
+  id: string;
+  section_key:
+    | "hero"
+    | "features"
+    | "demo"
+    | "benefits"
+    | "cta"
+    | "pricing"
+    | "faq"
+    | "testimonials"
+    | "footer";
+  name: string;
+  enabled: boolean;
+  display_order: number;
+  content: any; // fleksibel per section
+};
+
+type LandingPayload = {
+  product: {
+    id: number;
+    product_code: string;
+    product_name: string;
+    status: string;
+  };
+  page: any;
+  sections: LandingSection[];
+};
+
 function idr(n?: number | string) {
   const v = typeof n === "string" ? Number(n) : n;
   if (!v && v !== 0) return "-";
@@ -103,6 +136,11 @@ function idr(n?: number | string) {
     maximumFractionDigits: 0,
   }).format(v);
 }
+
+const getSection = (
+  sections: LandingSection[],
+  key: LandingSection["section_key"]
+) => sections.find((s) => s.enabled && s.section_key === key);
 
 // ===================== TOP BAR =====================
 function ProductTopBar({ title }: { title?: string }) {
@@ -135,22 +173,26 @@ function ProductHeroStandalone({
   name,
   description,
   code,
+  productName,
+  data,
 }: {
   name: string;
   description?: string;
   code: string;
+  productName: string;
+  data: any;
 }) {
-  const img = "/placeholder.svg";
+  const bg = data?.backgroundImage as string | "/placeholder.svg";
   return (
     <section className="relative overflow-hidden bg-white py-16 sm:py-24">
       <div className="container mx-auto max-w-7xl px-4">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
           <div className="flex flex-col justify-center">
             <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-              {name}
+              {productName}
             </h1>
-            {description ? (
-              <p className="mt-4 text-lg text-gray-600">{description}</p>
+            {data?.subtitle ? (
+              <p className="mt-4 text-lg text-gray-600">{data.subtitle}</p>
             ) : null}
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <Button
@@ -161,7 +203,7 @@ function ProductHeroStandalone({
                 <Link
                   href={`/checkout?product=${code}&package=starter&duration=1`}
                 >
-                  Try Free
+                  {data?.ctaText || "Choose Plan"}
                 </Link>
               </Button>
               <Button
@@ -182,8 +224,8 @@ function ProductHeroStandalone({
             <div className="aspect-[4/3] overflow-hidden rounded-2xl bg-gray-100 shadow-2xl">
               <Image
                 // ganti kalau udah ada gambarnya
-                src={"/placeholder.svg"}
-                alt={`${name} hero`}
+                src={bg}
+                alt={`${productName} hero`}
                 fill
                 className="object-cover"
                 priority
@@ -227,255 +269,170 @@ function ProductHeroStandalone({
 // }
 
 // ===================== FEATURES =====================
-// function ProductFeatureGrid({
-//   features,
-// }: {
-//   features: { icon: string; title: string; description: string }[];
-// }) {
-//   const [expanded, setExpanded] = useState<number | null>(null);
-//   return (
-//     <section className="bg-white py-16 sm:py-24">
-//       <div className="container mx-auto max-w-7xl px-4">
-//         <div className="text-center">
-//           <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-//             Powerful Features
-//           </h2>
-//           <p className="mt-4 text-lg text-gray-600">
-//             Everything you need to manage your rental business efficiently
-//           </p>
-//         </div>
-//         <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-//           {features.map((f, i) => {
-//             const Icon = (Lucide as any)[f.icon] as React.ComponentType<any>;
-//             const isOpen = expanded === i;
-//             return (
-//               <div
-//                 key={i}
-//                 className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200"
-//               >
-//                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-r from-indigo-500 to-blue-500">
-//                   {Icon ? <Icon className="h-6 w-6 text-white" /> : null}
-//                 </div>
-//                 <h3 className="mt-4 text-lg font-semibold text-gray-900">
-//                   {f.title}
-//                 </h3>
-//                 <p className="mt-2 text-gray-600">{f.description}</p>
-//                 <Button
-//                   variant="ghost"
-//                   size="sm"
-//                   className="mt-3 p-0 text-indigo-600 hover:text-indigo-700"
-//                   onClick={() => setExpanded(isOpen ? null : i)}
-//                 >
-//                   View details{" "}
-//                   {isOpen ? (
-//                     <ChevronUp className="ml-1 h-4 w-4" />
-//                   ) : (
-//                     <ChevronDown className="ml-1 h-4 w-4" />
-//                   )}
-//                 </Button>
-//                 {isOpen && (
-//                   <div className="mt-3 rounded-lg bg-gray-50 p-4">
-//                     <p className="text-sm text-gray-700">
-//                       Advanced {f.title.toLowerCase()} capabilities with
-//                       enterprise-grade security, real-time synchronization, and
-//                       comprehensive analytics to help you make data-driven
-//                       decisions.
-//                     </p>
-//                   </div>
-//                 )}
-//               </div>
-//             );
-//           })}
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
+function ProductFeatureGrid({ data }: { data: any }) {
+  const list: { icon?: string; title: string; description?: string }[] =
+    data?.features || [];
+  if (!list.length) return null;
+  return (
+    <section className="bg-white py-16 sm:py-24">
+      <div className="container mx-auto max-w-7xl px-4">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            {data?.title || "Powerful Features"}
+          </h2>
+          {data?.subtitle ? (
+            <p className="mt-4 text-lg text-gray-600">{data.subtitle}</p>
+          ) : null}
+        </div>
+        <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((f, i) => (
+            <div
+              key={i}
+              className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-r from-indigo-500 to-blue-500" />
+              <h3 className="mt-4 text-lg font-semibold text-gray-900">
+                {f.title}
+              </h3>
+              <p className="mt-2 text-gray-600">{f.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ===================== DEMO GALLERY =====================
-// function ProductDemoGallery({
-//   product,
-// }: {
-//   product: { name: string; slug: string };
-// }) {
-//   const [activeTab, setActiveTab] = useState<"desktop" | "tablet" | "mobile">(
-//     "desktop"
-//   );
-//   const [idx, setIdx] = useState(0);
-//   const name = product?.name || "Product";
-//   const items = [
-//     {
-//       type: "video",
-//       title: "Dashboard Overview",
-//       description: "See how easy it is to manage your rental properties",
-//       thumbnail: `/placeholder.svg?height=400&width=600&query=${name} dashboard overview`,
-//       duration: "2:30",
-//     },
-//     {
-//       type: "image",
-//       title: "Property Management",
-//       description: "Add and organize your rental properties",
-//       thumbnail: `/placeholder.svg?height=400&width=600&query=${name} property management interface`,
-//     },
-//     {
-//       type: "image",
-//       title: "Tenant Portal",
-//       description: "Tenant-friendly interface for payments and requests",
-//       thumbnail: `/placeholder.svg?height=400&width=600&query=${name} tenant portal`,
-//     },
-//     {
-//       type: "video",
-//       title: "Mobile App Demo",
-//       description: "Manage everything on the go",
-//       thumbnail: `/placeholder.svg?height=400&width=600&query=${name} mobile app demo`,
-//       duration: "1:45",
-//     },
-//   ];
-//   const next = () => setIdx((p) => (p + 1) % items.length);
-//   const prev = () => setIdx((p) => (p - 1 + items.length) % items.length);
-//   return (
-//     <section className="py-16 bg-gradient-to-br from-slate-50 to-blue-50">
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//         <div className="text-center mb-12">
-//           <h2 className="text-3xl font-bold text-gray-900 mb-4">
-//             See {name} in Action
-//           </h2>
-//           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-//             Watch how {name} transforms your rental property management with
-//             intuitive interfaces and powerful features.
-//           </p>
-//         </div>
-//         <div className="flex justify-center mb-8">
-//           <div className="flex bg-white rounded-lg p-1 shadow-sm border">
-//             <button
-//               onClick={() => setActiveTab("desktop")}
-//               className={`flex items-center gap-2 px-4 py-2 rounded-md ${
-//                 activeTab === "desktop"
-//                   ? "bg-indigo-600 text-white"
-//                   : "text-gray-600 hover:text-gray-900"
-//               }`}
-//             >
-//               <Monitor className="w-4 h-4" /> Desktop
-//             </button>
-//             <button
-//               onClick={() => setActiveTab("tablet")}
-//               className={`flex items-center gap-2 px-4 py-2 rounded-md ${
-//                 activeTab === "tablet"
-//                   ? "bg-indigo-600 text-white"
-//                   : "text-gray-600 hover:text-gray-900"
-//               }`}
-//             >
-//               <Tablet className="w-4 h-4" /> Tablet
-//             </button>
-//             <button
-//               onClick={() => setActiveTab("mobile")}
-//               className={`flex items-center gap-2 px-4 py-2 rounded-md ${
-//                 activeTab === "mobile"
-//                   ? "bg-indigo-600 text-white"
-//                   : "text-gray-600 hover:text-gray-900"
-//               }`}
-//             >
-//               <Smartphone className="w-4 h-4" /> Mobile
-//             </button>
-//           </div>
-//         </div>
-//         <div className="relative mb-8">
-//           <Card className="overflow-hidden shadow-2xl">
-//             <div className="relative">
-//               {/* eslint-disable-next-line @next/next/no-img-element */}
-//               <img
-//                 src={items[idx].thumbnail || "/placeholder.svg"}
-//                 alt={items[idx].title}
-//                 className="w-full h-96 object-cover"
-//               />
-//               {items[idx].type === "video" && (
-//                 <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-//                   <Button
-//                     size="lg"
-//                     className="bg-white text-indigo-600 hover:bg-gray-100 rounded-full p-4"
-//                   >
-//                     <Play className="w-8 h-8" />
-//                   </Button>
-//                 </div>
-//               )}
-//               {items[idx].duration && (
-//                 <Badge className="absolute top-4 right-4 bg-black/70 text-white">
-//                   {items[idx].duration}
-//                 </Badge>
-//               )}
-//               <Button
-//                 variant="outline"
-//                 size="icon"
-//                 onClick={prev}
-//                 className="absolute left-4 top-1/2 -translate-y-1/2 bg-white shadow-lg"
-//               >
-//                 <ChevronLeft className="w-4 h-4" />
-//               </Button>
-//               <Button
-//                 variant="outline"
-//                 size="icon"
-//                 onClick={next}
-//                 className="absolute right-4 top-1/2 -translate-y-1/2 bg-white shadow-lg"
-//               >
-//                 <ChevronRight className="w-4 h-4" />
-//               </Button>
-//             </div>
-//             <div className="p-6">
-//               <h3 className="text-xl font-semibold text-gray-900 mb-2">
-//                 {items[idx].title}
-//               </h3>
-//               <p className="text-gray-600">{items[idx].description}</p>
-//             </div>
-//           </Card>
-//         </div>
-//         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-//           {items.map((it, i) => (
-//             <Card
-//               key={i}
-//               className={`cursor-pointer transition-all hover:shadow-lg ${
-//                 idx === i ? "ring-2 ring-indigo-600" : ""
-//               }`}
-//               onClick={() => setIdx(i)}
-//             >
-//               <div className="relative">
-//                 {/* eslint-disable-next-line @next/next/no-img-element */}
-//                 <img
-//                   src={it.thumbnail || "/placeholder.svg"}
-//                   alt={it.title}
-//                   className="w-full h-24 object-cover rounded-t-lg"
-//                 />
-//                 {it.type === "video" && (
-//                   <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-t-lg">
-//                     <Play className="w-6 h-6 text-white" />
-//                   </div>
-//                 )}
-//               </div>
-//               <div className="p-3">
-//                 <h4 className="font-medium text-sm text-gray-900 truncate">
-//                   {it.title}
-//                 </h4>
-//                 {it.duration && (
-//                   <p className="text-xs text-gray-500 mt-1">{it.duration}</p>
-//                 )}
-//               </div>
-//             </Card>
-//           ))}
-//         </div>
-//         <div className="text-center mt-12">
-//           <Button
-//             size="lg"
-//             className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-8 py-3"
-//           >
-//             Start Your Free Trial
-//           </Button>
-//           <p className="text-sm text-gray-500 mt-2">
-//             No credit card required • 14-day free trial
-//           </p>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
+function ProductDemoGallery({ data }: { data: any }) {
+  const items: { title: string; duration?: string; thumbnail?: string }[] =
+    data?.videos || [];
+  const [idx, setIdx] = useState(0);
+  if (!items.length) return null;
+  const next = () => setIdx((p) => (p + 1) % items.length);
+  const prev = () => setIdx((p) => (p - 1 + items.length) % items.length);
+  return (
+    <section className="py-16 bg-gradient-to-br from-slate-50 to-blue-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">
+            {data?.title || "See Product in Action"}
+          </h2>
+          {/* <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            Watch how {name} transforms your rental property management with
+            intuitive interfaces and powerful features.
+          </p> */}
+        </div>
+        {/* <div className="flex justify-center mb-8">
+          <div className="flex bg-white rounded-lg p-1 shadow-sm border">
+            <button
+              onClick={() => setActiveTab("desktop")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md ${
+                activeTab === "desktop"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <Monitor className="w-4 h-4" /> Desktop
+            </button>
+            <button
+              onClick={() => setActiveTab("tablet")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md ${
+                activeTab === "tablet"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <Tablet className="w-4 h-4" /> Tablet
+            </button>
+            <button
+              onClick={() => setActiveTab("mobile")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md ${
+                activeTab === "mobile"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              <Smartphone className="w-4 h-4" /> Mobile
+            </button>
+          </div>
+        </div> */}
+        <div className="relative mb-8">
+          <Card className="overflow-hidden shadow-2xl">
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={items[idx]?.thumbnail || "/placeholder.svg"}
+                alt={items[idx]?.title}
+                className="w-full h-96 object-cover"
+              />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <Button
+                  size="lg"
+                  className="bg-white text-indigo-600 hover:bg-gray-100 rounded-full p-4"
+                >
+                  <Play className="w-8 h-8" />
+                </Button>
+              </div>
+              {items[idx]?.duration && (
+                <Badge className="absolute top-4 right-4 bg-black/70 text-white">
+                  {items[idx]?.duration}
+                </Badge>
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={prev}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white shadow-lg"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={next}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white shadow-lg"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-6">
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {items[idx]?.title}
+              </h3>
+            </div>
+          </Card>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {items.map((it, i) => (
+            <Card
+              key={i}
+              className={`cursor-pointer transition-all hover:shadow-lg ${
+                idx === i ? "ring-2 ring-indigo-600" : ""
+              }`}
+              onClick={() => setIdx(i)}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={it.thumbnail || "/placeholder.svg"}
+                alt={it.title}
+                className="w-full h-24 object-cover rounded-t-lg"
+              />
+              <div className="p-3">
+                <h4 className="font-medium text-sm text-gray-900 truncate">
+                  {it.title}
+                </h4>
+                {it.duration && (
+                  <p className="text-xs text-gray-500 mt-1">{it.duration}</p>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ===================== PRICING =====================
 function ProductPricingStandalone({
@@ -664,318 +621,166 @@ function ProductPricingStandalone({
 }
 
 // ===================== TESTIMONIALS =====================
-// function ProductTestimonials({
-//   testimonials,
-// }: {
-//   testimonials?: {
-//     id?: number;
-//     name?: string;
-//     role?: string;
-//     company?: string;
-//     avatar?: string;
-//     rating?: number;
-//     content?: string;
-//     featured?: boolean;
-//   }[];
-// }) {
-//   const defaultData = [
-//     {
-//       id: 1,
-//       name: "Sarah Johnson",
-//       role: "Property Manager",
-//       company: "Urban Properties",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "Rent Vix Pro has completely transformed how we manage our rental properties. The automated rent collection and maintenance tracking features have saved us countless hours every month.",
-//       featured: true,
-//     },
-//     {
-//       id: 2,
-//       name: "Michael Chen",
-//       role: "Real Estate Investor",
-//       company: "Chen Holdings",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "The financial reporting features are incredible. I can see exactly how each property is performing and make data-driven decisions about my portfolio.",
-//     },
-//     {
-//       id: 3,
-//       name: "Lisa Rodriguez",
-//       role: "Landlord",
-//       company: "Independent",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "My tenants love the tenant portal. They can pay rent online, submit maintenance requests, and communicate with me easily. It's made everything so much smoother.",
-//     },
-//     {
-//       id: 4,
-//       name: "David Thompson",
-//       role: "Property Owner",
-//       company: "Thompson Rentals",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "The maintenance tracking system is a game-changer. I can schedule repairs, track costs, and ensure everything is documented properly.",
-//     },
-//     {
-//       id: 5,
-//       name: "Amanda Foster",
-//       role: "Portfolio Manager",
-//       company: "Foster Real Estate",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "Managing 50+ properties used to be overwhelming. Now with Rent Vix Pro, I have everything organized and automated. Best investment I've made for my business.",
-//     },
-//     {
-//       id: 6,
-//       name: "Robert Kim",
-//       role: "Real Estate Agent",
-//       company: "Kim Realty Group",
-//       avatar: "/placeholder.svg?height=40&width=40",
-//       rating: 5,
-//       content:
-//         "I recommend Rent Vix Pro to all my clients who are getting into rental properties. The learning curve is minimal and the results are immediate.",
-//     },
-//   ];
-//   const data = (
-//     testimonials && testimonials.length > 0 ? testimonials : defaultData
-//   ) as any[];
-//   const featured = data.find((t) => t.featured);
-//   const rest = data.filter((t) => !t.featured);
-//   const Stars = ({ n = 5 }: { n?: number }) => (
-//     <div className="flex items-center gap-1">
-//       {Array.from({ length: 5 }).map((_, i) => (
-//         <Star
-//           key={i}
-//           className={`w-4 h-4 ${
-//             i < (n || 0) ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
-//           }`}
-//         />
-//       ))}
-//     </div>
-//   );
-//   const initials = (name?: string) =>
-//     !name
-//       ? "?"
-//       : name
-//           .split(" ")
-//           .map((s) => s[0])
-//           .join("")
-//           .toUpperCase();
-//   return (
-//     <section
-//       id="testimonials"
-//       className="py-16 bg-gradient-to-br from-slate-50 to-blue-50"
-//     >
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//         <div className="text-center mb-16">
-//           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-//             Trusted by Property Managers Worldwide
-//           </h2>
-//           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-//             Join thousands of property managers who have transformed their
-//             business with Rent Vix Pro
-//           </p>
-//           <div className="flex flex-wrap justify-center gap-8 mt-8">
-//             <div className="text-center">
-//               <div className="text-3xl font-bold text-indigo-600">10,000+</div>
-//               <div className="text-sm text-gray-600">Properties Managed</div>
-//             </div>
-//             <div className="text-center">
-//               <div className="text-3xl font-bold text-indigo-600">98%</div>
-//               <div className="text-sm text-gray-600">Customer Satisfaction</div>
-//             </div>
-//             <div className="text-center">
-//               <div className="text-3xl font-bold text-indigo-600">4.9/5</div>
-//               <div className="text-sm text-gray-600">Average Rating</div>
-//             </div>
-//           </div>
-//         </div>
-//         {featured && (
-//           <Card className="mb-12 border-2 border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50">
-//             <CardContent className="p-8">
-//               <div className="flex items-start gap-4">
-//                 <Quote className="w-8 h-8 text-indigo-600 flex-shrink-0 mt-1" />
-//                 <div className="flex-1">
-//                   <p className="text-lg text-gray-700 mb-6 leading-relaxed">
-//                     "{featured.content || "Great product!"}"
-//                   </p>
-//                   <div className="flex items-center justify-between">
-//                     <div className="flex items-center gap-4">
-//                       <Avatar className="w-12 h-12">
-//                         <AvatarImage
-//                           src={featured.avatar || "/placeholder.svg"}
-//                           alt={featured.name || "User"}
-//                         />
-//                         <AvatarFallback>
-//                           {initials(featured.name)}
-//                         </AvatarFallback>
-//                       </Avatar>
-//                       <div>
-//                         <div className="font-semibold text-gray-900">
-//                           {featured.name || "Anonymous"}
-//                         </div>
-//                         <div className="text-sm text-gray-600">
-//                           {featured.role || "User"}
-//                           {featured.company ? ` at ${featured.company}` : ""}
-//                         </div>
-//                       </div>
-//                     </div>
-//                     <Stars n={featured.rating || 5} />
-//                   </div>
-//                 </div>
-//               </div>
-//             </CardContent>
-//           </Card>
-//         )}
-//         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-//           {rest.map((t) => (
-//             <Card
-//               key={t.id}
-//               className="h-full hover:shadow-lg transition-shadow duration-300"
-//             >
-//               <CardContent className="p-6 h-full flex flex-col">
-//                 <div className="mb-4">
-//                   <Stars n={t.rating || 5} />
-//                 </div>
-//                 <p className="text-gray-700 mb-6 flex-1 leading-relaxed">
-//                   "{t.content || "Great product!"}"
-//                 </p>
-//                 <div className="flex items-center gap-3">
-//                   <Avatar className="w-10 h-10">
-//                     <AvatarImage
-//                       src={t.avatar || "/placeholder.svg"}
-//                       alt={t.name || "User"}
-//                     />
-//                     <AvatarFallback>{initials(t.name)}</AvatarFallback>
-//                   </Avatar>
-//                   <div>
-//                     <div className="font-semibold text-gray-900 text-sm">
-//                       {t.name || "Anonymous"}
-//                     </div>
-//                     <div className="text-xs text-gray-600">
-//                       {t.role || "User"}
-//                       {t.company && t.company !== "Independent"
-//                         ? ` at ${t.company}`
-//                         : ""}
-//                     </div>
-//                   </div>
-//                 </div>
-//               </CardContent>
-//             </Card>
-//           ))}
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
+function ProductTestimonials({ data }: { data: any }) {
+  const stats: { label: string; value: string }[] = data?.stats || [];
+  const testimonials: { quote: string; author?: string; company?: string }[] =
+    data?.testimonials || [];
+  const companies: string[] = data?.companies || [];
+  if (!stats.length && !testimonials.length) return null;
+
+  const renderStars = (rating: number) => {
+    return Array.from({ length: 5 }, (_, i) => (
+      <Star
+        key={i}
+        className={`w-4 h-4 ${
+          i < rating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"
+        }`}
+      />
+    ));
+  };
+
+  return (
+    <section
+      id="testimonials"
+      className="py-16 bg-gradient-to-br from-slate-50 to-blue-50"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            {data?.title || "Trusted by Property Managers Worldwide"}
+          </h2>
+          {data?.subtitle ? (
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              {data.subtitle}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-center gap-8 mt-8">
+            {stats.map((s, i) => (
+              <div key={i} className="text-center">
+                <div className="text-3xl font-bold text-indigo-600">
+                  {s.value}
+                </div>
+                <div className="text-sm text-gray-600">{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {testimonials.map((testimonial, i) => (
+            <Card
+              key={i}
+              className="h-full hover:shadow-lg transition-shadow duration-300"
+            >
+              <CardContent className="p-6 h-full flex flex-col">
+                <div className="flex items-center gap-1 mb-4">
+                  {renderStars(5)}
+                </div>
+                <p className="text-gray-700 mb-6 flex-1 leading-relaxed">
+                  "{testimonial.quote || "Great product!"}"
+                </p>
+                <div className="flex items-center gap-3">
+                  <Avatar className="w-10 h-10">
+                    <AvatarImage
+                      src="/placeholder.svg"
+                      alt={testimonial.author || "User"}
+                    />
+                    {/* <AvatarFallback>{getInitials(testimonial.name)}</AvatarFallback> */}
+                  </Avatar>
+                  <div>
+                    <div className="font-semibold text-gray-900 text-sm">
+                      {testimonial.author || "Anonymous"}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      User
+                      {testimonial.company &&
+                        testimonial.company !== "Independent" &&
+                        ` at ${testimonial.company}`}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        {/* Trust Indicators */}
+        <div className="mt-12 text-center">
+          <p className="text-sm text-gray-500 mb-4">Trusted by leading property management companies</p>
+          <div className="flex flex-wrap justify-center items-center gap-8 opacity-60">
+          {companies.map((c, i) => (
+            <div key={i} className="text-lg font-semibold text-gray-400">{c}</div>
+          ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ===================== FAQ =====================
-// function ProductFAQStandalone({ productSlug }: { productSlug: string }) {
-//   const faqs = [
-//     {
-//       question: "How does Rent Vix Pro help manage my rental business?",
-//       answer:
-//         "Rent Vix Pro streamlines your entire rental operation with automated booking management, inventory tracking, customer communication, and financial reporting. You can manage multiple properties, track maintenance schedules, and process payments all from one dashboard.",
-//     },
-//     {
-//       question: "Can I customize the booking forms and customer portal?",
-//       answer:
-//         "Yes! Rent Vix Pro offers extensive customization options including branded booking forms, custom fields, automated email templates, and a white-label customer portal that matches your business branding.",
-//     },
-//     {
-//       question: "What payment methods are supported?",
-//       answer:
-//         "We support all major payment methods including credit cards, bank transfers, digital wallets, and local payment options. Automatic payment processing and recurring billing are included in all plans.",
-//     },
-//     {
-//       question: "Is there a mobile app for managing rentals on the go?",
-//       answer:
-//         "Yes, Rent Vix Pro includes native mobile apps for iOS and Android, allowing you to manage bookings, communicate with customers, and track inventory from anywhere.",
-//     },
-//     {
-//       question: "How secure is my data?",
-//       answer:
-//         "We use enterprise-grade security with 256-bit SSL encryption, regular security audits, and comply with GDPR and other data protection regulations. Your data is backed up daily and stored in secure data centers.",
-//     },
-//     {
-//       question: "Can I integrate with my existing tools?",
-//       answer:
-//         "Rent Vix Pro integrates with popular tools like QuickBooks, Mailchimp, Google Calendar, and many others through our API and Zapier connections.",
-//     },
-//     {
-//       question: "What kind of support do you provide?",
-//       answer:
-//         "We offer 24/7 customer support via chat, email, and phone. Plus, you get access to our knowledge base, video tutorials, and dedicated onboarding specialist to help you get started.",
-//     },
-//     {
-//       question: "Can I try it before purchasing?",
-//       answer:
-//         "Yes! We offer a 14-day free trial with full access to all features. No credit card required to start your trial.",
-//     },
-//   ];
-//   return (
-//     <section id="faq" className="py-16 bg-white">
-//       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-//         <div className="text-center mb-12">
-//           <h2 className="text-3xl font-bold text-gray-900 mb-4">
-//             Frequently Asked Questions
-//           </h2>
-//           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-//             Get answers to common questions about Rent Vix Pro and how it can
-//             transform your rental business.
-//           </p>
-//         </div>
-//         <div className="mb-12">
-//           <Accordion type="single" collapsible className="space-y-4">
-//             {faqs.map((faq, i) => (
-//               <AccordionItem
-//                 key={i}
-//                 value={`item-${i}`}
-//                 className="border border-gray-200 rounded-lg px-6 py-2 bg-white shadow-sm hover:shadow-md transition-shadow"
-//               >
-//                 <AccordionTrigger className="text-left font-semibold text-gray-900 hover:text-indigo-600 py-4">
-//                   {faq.question}
-//                 </AccordionTrigger>
-//                 <AccordionContent className="text-gray-600 pb-4 leading-relaxed">
-//                   {faq.answer}
-//                 </AccordionContent>
-//               </AccordionItem>
-//             ))}
-//           </Accordion>
-//         </div>
-//         <div className="text-center bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-8">
-//           <h3 className="text-xl font-semibold text-gray-900 mb-2">
-//             Still have questions?
-//           </h3>
-//           <p className="text-gray-600 mb-6">
-//             Our support team is here to help you get started with Rent Vix Pro.
-//           </p>
-//           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-//             <Button
-//               variant="outline"
-//               className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 bg-transparent"
-//             >
-//               Contact Support
-//             </Button>
-//             <Button
-//               className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white"
-//               onClick={() =>
-//                 (window.location.href = `/checkout?product=${productSlug}&package=professional&duration=monthly`)
-//               }
-//             >
-//               Start Free Trial
-//             </Button>
-//           </div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
+function ProductFAQStandalone({ data }: { data: any }) {
+  const faqs: { question: string; answer: string }[] = data?.faqs || [];
+  if (!faqs.length) return null;
+  return (
+    <section id="faq" className="py-16 bg-white">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">
+            {data?.title || "Frequently Asked Questions"}
+          </h2>
+          {/* <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            Get answers to common questions about Rent Vix Pro and how it can
+            transform your rental business.
+          </p> */}
+          {data?.subtitle ? (
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              {data.subtitle}
+            </p>
+          ) : null}
+        </div>
+        <div className="mb-12">
+          <Accordion type="single" collapsible className="space-y-4">
+            {faqs.map((f, i) => (
+              <AccordionItem
+                key={i}
+                value={`item-${i}`}
+                className="border border-gray-200 rounded-lg px-6 py-2 bg-white shadow-sm hover:shadow-md transition-shadow"
+              >
+                <AccordionTrigger className="text-left font-semibold text-gray-900 hover:text-indigo-600 py-4">
+                  {f.question}
+                </AccordionTrigger>
+                <AccordionContent className="text-gray-600 pb-4 leading-relaxed">
+                  {f.answer}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+        <div className="text-center bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl p-8">
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            {data.contactSection.title}
+          </h3>
+          <p className="text-gray-600 mb-6">{data.contactSection.subtitle}</p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button
+              variant="outline"
+              className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 bg-transparent"
+            >
+              Contact Support
+            </Button>
+            <Button
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white"
+              // onClick={() =>
+              //   (window.location.href = `/checkout?product=${code}&package=professional&duration=monthly`)
+              // }
+            >
+              Choose Plan
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ===================== FINAL CTA =====================
 // function ProductFinalCTA({ productSlug }: { productSlug: string }) {
@@ -1239,6 +1044,9 @@ export default function ProductPage() {
   const [packages, setPackages] = useState<BackendPayload["packages"]>([]);
   const [durations, setDurations] = useState<BackendPayload["durations"]>([]);
 
+  // landing page
+  const [landingSections, setLandingSections] = useState<LandingSection[]>([]);
+
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -1249,6 +1057,8 @@ export default function ProductPage() {
         const res = await fetchProductDetail(code);
         // fungsi kamu mengembalikan data.data; tapi untuk aman, cek dua pola
         const payload: BackendPayload = (res?.data ? res.data : res) as any;
+
+        const landing: LandingPayload = await fetchLandingPage(code);
 
         if (!payload?.product) {
           if (mounted) {
@@ -1263,6 +1073,9 @@ export default function ProductPage() {
           setProductDesc(payload.product.description || undefined);
           setPackages(payload.packages || []);
           setDurations(payload.durations || []);
+          setLandingSections(
+            (landing?.sections || []).filter((s: LandingSection) => s.enabled)
+          );
         }
       } catch (e: any) {
         if (mounted) setError(e?.message || "Failed to load product");
@@ -1319,6 +1132,16 @@ export default function ProductPage() {
     );
   }
 
+  // Ambil setiap section dari landing
+  const sHero = getSection(landingSections, "hero");
+  const sFeatures = getSection(landingSections, "features");
+  const sDemo = getSection(landingSections, "demo");
+  const sPricing = getSection(landingSections, "pricing");
+  const sFAQ = getSection(landingSections, "faq");
+  const sTestimonials = getSection(landingSections, "testimonials");
+  const sCTA = getSection(landingSections, "cta");
+  const sBenefits = getSection(landingSections, "benefits");
+
   return (
     <div className="min-h-screen bg-white pb-20">
       <ProductTopBar title={productName} />
@@ -1327,23 +1150,34 @@ export default function ProductPage() {
           name={productName}
           description={productDesc}
           code={code}
+          productName={productName}
+          data={sHero.content}
         />
         {/* {product.valueProps?.length ? (
           <ProductValueProps valueProps={product.valueProps as any} />
         ) : null} */}
-        {/* {product.features?.length ? (
-          <ProductFeatureGrid features={product.features as any} />
-        ) : null} */}
-        {/* <ProductDemoGallery
-          product={{ name: product.name, slug: product.slug }}
-        /> */}
-        <ProductPricingStandalone
-          productCode={code}
-          packages={packages}
-        />
-        {/* <ProductTestimonials testimonials={product.testimonials as any} />
-        <ProductFAQStandalone productSlug={product.slug} />
-        <ProductFinalCTA productSlug={product.slug} /> */}
+        {sBenefits && (
+          <section className="py-12 bg-white">
+            <div className="max-w-7xl mx-auto px-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {(sBenefits.content?.benefits || []).map((b: any, i: number) => (
+                <div
+                  key={i}
+                  className="rounded-xl bg-gray-50 p-6 ring-1 ring-gray-200"
+                >
+                  <div className="h-10 w-10 rounded-md bg-indigo-600/10" />
+                  <div className="mt-3 font-semibold">{b.title}</div>
+                  <div className="text-sm text-gray-600">{b.description}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {sFeatures && <ProductFeatureGrid data={sFeatures.content} />}
+        <ProductDemoGallery data={sDemo.content} />
+        <ProductPricingStandalone productCode={code} packages={packages} />
+        {sTestimonials && <ProductTestimonials data={sTestimonials.content} />}
+        {sFAQ && <ProductFAQStandalone data={sFAQ.content} />}
+        {/* {sCTA && <ProductFinalCTA productCode={code} />} */}
       </main>
       <ProductFooter />
       {/* <ProductMobileCTA productSlug={product.slug} /> */}

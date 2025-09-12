@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CustomerAuthController;
+use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\Payments\MidtransWebhookController;
@@ -37,21 +38,32 @@ Route::prefix('customer')->group(function () {
         Route::delete('/profile-photo', [CustomerAuthController::class, 'deleteProfilePhoto']);
         Route::put('/change-password',  [CustomerAuthController::class, 'changePassword']);
 
+        // subscription
+        Route::get('/subscriptions', [OrderController::class, 'mySubscriptions']);
+
         // list product customer yang dibeli
-        Route::get('my-products', [OrderController::class, 'myProducts']);
+        Route::get('/my-products', [OrderController::class, 'myProducts']);
 
         // list invoice
-        Route::get('invoices',    [OrderController::class, 'myInvoices']);
+        Route::get('/invoices',    [OrderController::class, 'myInvoices']);
     });
 });
 
 Route::middleware('auth:customer-api')->group(function () {
-    Route::post('/orders', [OrderController::class, 'store']);  // create + snap token
-    Route::get('/orders/{id}', [OrderController::class, 'show']); // detail order
+    // Order baru (Purchase)
+    Route::post('/orders', [OrderController::class, 'purchase']);
+    // Renewal (Perpanjangan durasi)
+    Route::post('/orders/renew', [OrderController::class, 'renew']);
+    // Upgrade paket
+    Route::post('/orders/upgrade', [OrderController::class, 'upgrade']);
 
-    // refresh status payment
+    // detail order
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+
+    // refresh status payment(Pembayaran)
     Route::post('/orders/{id}/refresh-status', [OrderStatusController::class, 'refresh'])
     ->middleware(['throttle:10,1']);
+
     // terima callback dari warehouse ketika provisioning ok
     // Route::post('/warehouse/callback', [WarehouseCallbackController::class, 'handle']);
 });
@@ -63,3 +75,8 @@ Route::post('/midtrans/webhook', [MidtransWebhookController::class, 'handle']);
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product_code}', [CatalogController::class, 'show']);
 
+// landing page
+Route::get('/catalog/products/landing/{codeOrId}', [LandingPageController::class,'show']);
+Route::put  ('/catalog/products/{codeOrId}/landing', [LandingPageController::class, 'upsert']);
+Route::patch('/catalog/products/{codeOrId}/landing/sections/{sectionId}', [LandingPageController::class, 'updateSection']);
+Route::delete('/catalog/products/{codeOrId}/landing/sections/{sectionId}', [LandingPageController::class, 'destroySection']);

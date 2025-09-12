@@ -62,6 +62,8 @@ type Order = {
   duration_code: string;
   duration_name?: string;
 
+  intent: string;
+
   payment_status?: string;
   payment_type?: string; // bank_transfer, qris, credit_card, ewallet, dsb
   va_number?: string;
@@ -71,6 +73,7 @@ type Order = {
   customer?: { id: string; name: string; email: string; phone?: string };
   created_at?: string;
   paid_at?: string | null;
+
 };
 
 /* =========================
@@ -120,6 +123,18 @@ const paymentMethodLabel = (v?: string) => {
       return toTitle(v || "-");
   }
 };
+
+function formatIntent(intent?: string): string {
+  if (!intent) return "";
+
+  const map: Record<string, string> = {
+    renew: "Renewal",
+    upgrade: "Upgrade Package",
+    purchase: "Purchase",
+  };
+
+  return map[intent.toLowerCase()] ?? intent.charAt(0).toUpperCase() + intent.slice(1);
+}
 
 export default function OrderDetailPage() {
   useEffect(() => {
@@ -393,6 +408,12 @@ export default function OrderDetailPage() {
 
                 {/* Package Details */}
                 <div className="flex justify-center gap-3">
+                  <Badge
+                    variant="outline"
+                    className="border-indigo-200 text-indigo-700 px-4 py-2"
+                  >
+                    {formatIntent(order.intent)}
+                  </Badge>
                   <Badge
                     variant="outline"
                     className="border-blue-200 text-blue-700 px-4 py-2"

@@ -45,9 +45,24 @@ import {
   type MyProductsResponse,
   fetchCustomerInvoices,
   type InvoiceItem,
+  createRenewOrder,
+  createUpgradeOrder,
+  fetchSubscriptions,
+  SubscriptionsItem,
 } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "@/hooks/use-toast";
+import { ensureSnap, openSnap } from "@/lib/midtrans";
+import RenewModal from "@/components/billing/RenewModal";
+import UpgradeModal from "@/components/billing/UpgradeModal";
+
+// context saat buka modal
+type ModalCtx = {
+  productCode: string;
+  packageCode: string;
+  durationCode?: string;
+  baseOrderId: string; // <— ini yang wajib dikirim ke BE
+};
 
 // FAQ data
 const faqData = [
@@ -101,7 +116,7 @@ export default function MyAccountPage() {
 
   // subscription / order yang dibayar / product active
   const [subsLoading, setSubsLoading] = useState(true);
-  const [subscriptions, setSubscriptions] = useState<MyProductsItem[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionsItem[]>([]);
   // pagination product
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
@@ -116,7 +131,7 @@ export default function MyAccountPage() {
   const [invLoading, setInvLoading] = useState(true);
   const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
   const [invPage, setInvPage] = useState(1);
-  const [invPerPage, setInvPerPage] = useState(10);
+  const [invPerPage, setInvPerPage] = useState(5);
   const [invMeta, setInvMeta] = useState<{
     current_page: number;
     per_page: number;
@@ -133,6 +148,15 @@ export default function MyAccountPage() {
     renewal: true,
     updates: false,
   });
+
+  // renew dan upgrade modal
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [selectedSub, setSelectedSub] = useState<SubscriptionsItem | null>(
+    null
+  );
+  const [ctx, setCtx] = useState<ModalCtx | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   // fetch user
   useEffect(() => {
@@ -154,13 +178,13 @@ export default function MyAccountPage() {
     load();
   }, [router]);
 
-  // Fetch my-products (setelah login OK)
+  // Fetch subscription (setelah login OK)
   useEffect(() => {
     if (!user) return;
     const loadSubs = async () => {
       try {
         setSubsLoading(true);
-        const res = await fetchMyProducts({ page, per_page: perPage }); // atau {active:1} bila hanya aktif
+        const res = await fetchSubscriptions({ page, per_page: perPage }); // atau {active:1} bila hanya aktif
         setSubscriptions(res.items);
         setMeta(res.meta);
       } catch (e) {
@@ -429,6 +453,19 @@ export default function MyAccountPage() {
     }
   };
 
+  // format intent
+  function formatIntent(intent?: string): string {
+    if (!intent) return "";
+
+    const map: Record<string, string> = {
+      renew: "Renewal",
+      upgrade: "Upgrade Package",
+      purchase: "Purchase",
+    };
+
+    return map[intent.toLowerCase()] ?? intent.charAt(0).toUpperCase() + intent.slice(1);
+  }
+
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: Home },
     { id: "products", label: "My Products", icon: Package },
@@ -471,6 +508,118 @@ export default function MyAccountPage() {
       toast({ title: "Signed out", description: "See you again!" });
     } finally {
       router.push("/login");
+    }
+  };
+
+  // HANDLER MODAL
+  const openRenewFor = (sub: SubscriptionsItem) => {
+    setSelectedSub(sub);
+    setCtx({
+      productCode: sub.product.code,
+      packageCode: sub.package.code, // renew: paket terkunci
+      durationCode: sub.duration.code, // preselect durasi lama kalau ada
+      baseOrderId: sub.meta?.last_paid_order_id || "", // <— PENTING
+    });
+    setUpgradeOpen(false);
+    setRenewOpen(true);
+  };
+
+  const openUpgradeFor = (sub: SubscriptionsItem) => {
+    setSelectedSub(sub);
+    setCtx({
+      productCode: sub.product.code,
+      packageCode: sub.package.code, // upgrade: bisa diganti di modal
+      durationCode: sub.duration.code,
+      baseOrderId: sub.meta?.last_paid_order_id || "", // <— PENTING
+    });
+    setRenewOpen(false);
+    setUpgradeOpen(true);
+  };
+
+  const handleConfirmRenew = async ({
+    duration_code,
+  }: {
+    duration_code: string;
+  }) => {
+    if (!selectedSub) return;
+    if (!ctx) return;
+
+    // Guard biar pasti string semua
+    const { productCode, packageCode, baseOrderId } = ctx;
+    if (!productCode || !packageCode || !baseOrderId || !duration_code) {
+      toast({
+        variant: "destructive",
+        title: "Data belum lengkap",
+        description: "Produk/paket/durasi/base order belum terisi.",
+      });
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      // Panggil backend bikin order renew
+      const res = await createRenewOrder({
+        product_code: productCode,
+        package_code: packageCode,
+        duration_code,
+        base_order_id: baseOrderId,
+      });
+      await ensureSnap();
+      openSnap(res.snap_token, res.order_id);
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        variant: "destructive",
+        title: "Gagal membuat order renew",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setProcessing(false);
+      setRenewOpen(false);
+    }
+  };
+
+  const handleConfirmUpgrade = async ({
+    package_code,
+    duration_code,
+  }: {
+    package_code: string;
+    duration_code: string;
+  }) => {
+    if (!selectedSub) return;
+    if (!ctx) return;
+
+    const { productCode, baseOrderId } = ctx;
+    if (!productCode || !package_code || !duration_code || !baseOrderId) {
+      toast({
+        variant: "destructive",
+        title: "Data belum lengkap",
+        description: "Produk/paket/durasi/base order belum terisi.",
+      });
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      // Panggil backend bikin order upgrade (in_place)
+      const res = await createUpgradeOrder({
+        product_code: productCode,
+        package_code,
+        duration_code,
+        base_order_id: baseOrderId,
+      });
+      await ensureSnap();
+      openSnap(res.snap_token, res.order_id);
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        variant: "destructive",
+        title: "Gagal membuat order upgrade",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setProcessing(false);
+      setUpgradeOpen(false);
     }
   };
 
@@ -659,7 +808,7 @@ export default function MyAccountPage() {
                 {!subsLoading &&
                   activeProducts.map((p) => (
                     <div
-                      key={p.order_id}
+                      key={p.subscription_id}
                       className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
                     >
                       <div>
@@ -721,7 +870,10 @@ export default function MyAccountPage() {
                   const productLabel = p.product.name || p.product.code;
 
                   return (
-                    <Card key={p.order_id} className="border-0 shadow-md">
+                    <Card
+                      key={p.subscription_id}
+                      className="border-0 shadow-md"
+                    >
                       <CardContent className="p-6">
                         <div className="flex items-start justify-between mb-4">
                           <div>
@@ -734,9 +886,9 @@ export default function MyAccountPage() {
                           </div>
                           <div className="text-right">
                             {getStatusBadge(isActiveNow)}
-                            <p className="text-lg font-bold text-slate-900 mt-1">
+                            {/* <p className="text-lg font-bold text-slate-900 mt-1">
                               {formatPrice(p.total)}
-                            </p>
+                            </p> */}
                           </div>
                         </div>
 
@@ -780,14 +932,20 @@ export default function MyAccountPage() {
                                   <ExternalLink className="h-4 w-4 mr-2" />
                                   Open App
                                 </Button>
-                                <Button variant="outline">
+                                {/* <Button
+                                  variant="outline"
+                                  onClick={() => openRenewFor(p)}
+                                >
                                   <RefreshCw className="h-4 w-4 mr-2" />
                                   Renew
                                 </Button>
-                                <Button variant="outline">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openUpgradeFor(p)}
+                                >
                                   <ArrowUpCircle className="h-4 w-4 mr-2" />
                                   Upgrade
-                                </Button>
+                                </Button> */}
                               </div>
                             </>
                           ) : (
@@ -870,11 +1028,20 @@ export default function MyAccountPage() {
                               {invoice.midtrans_order_id}
                             </p>
                             <p className="text-sm text-slate-600">
-                              {invoice.product_name} - {invoice.package_name}
+                              {invoice.product_name}
+                              {invoice.intent === 'renew' ?
+                                <span className="text-sm text-slate-600"> - {invoice.package_name} - Extended until {formatDate(invoice.end_date)}</span>
+                                : invoice.intent === 'upgrade' ?
+                                <span className="text-sm text-slate-600"> - Upgraded to {invoice.package_name}</span>
+                                : <span> - {invoice.package_name}</span>
+                              }
                             </p>
                             <p className="text-sm text-slate-500">
                               {formatDate(invoice.date)}
                             </p>
+                            <Badge className="bg-indigo-500">
+                              {formatIntent(invoice.intent)}
+                            </Badge>
                           </div>
                         </div>
                         <div className="text-right">
@@ -917,35 +1084,55 @@ export default function MyAccountPage() {
             </div>
 
             <div className="space-y-4">
-              {subscriptions.map((product) => (
-                <Card key={product.id} className="border-0 shadow-md">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-900">
-                          {product.productName}
-                        </h3>
-                        <p className="text-slate-600">{product.package} Plan</p>
-                        <p className="text-sm text-slate-500 mt-1">
-                          {product.status === "active"
-                            ? `Expires: ${formatDate(product.endDate)}`
-                            : `Expired: ${formatDate(product.endDate)}`}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button className="bg-blue-600 hover:bg-blue-700">
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Renew
-                        </Button>
-                        <Button variant="outline">
-                          <ArrowUpCircle className="h-4 w-4 mr-2" />
-                          Upgrade Package
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {!subsLoading &&
+                subscriptions.map((p) => {
+                  const isActiveNow = p.is_currently_active;
+                  const remaining = getDaysUntilExpiry(p.end_date);
+                  const durationLabel = p.duration.name || p.duration.code; // ex: "12 Bulan"
+                  const packageLabel = p.package.name || p.package.code;
+                  const productLabel = p.product.name || p.product.code;
+
+                  return (
+                    <Card
+                      key={p.subscription_id}
+                      className="border-0 shadow-md"
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900">
+                              {productLabel}
+                            </h3>
+                            <p className="text-slate-600">
+                              {packageLabel} Plan
+                            </p>
+                            <p className="text-sm text-slate-500 mt-1">
+                              {isActiveNow
+                                ? `Expires: ${formatDate(p.end_date)}`
+                                : `Expired: ${formatDate(p.end_date)}`}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => openRenewFor(p)}
+                            >
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Renew
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => openUpgradeFor(p)}
+                            >
+                              <ArrowUpCircle className="h-4 w-4 mr-2" />
+                              Upgrade Package
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           </div>
         );
@@ -1280,6 +1467,43 @@ export default function MyAccountPage() {
           })}
         </div>
       </div>
+
+      {/* ====== MODAL AREA (selalu render, open controlled) ====== */}
+      {selectedSub && (
+        <>
+          {ctx && (
+            <RenewModal
+              open={renewOpen}
+              onOpenChange={(v) => {
+                // pastikan hanya satu modal aktif
+                setRenewOpen(v);
+                if (v) setUpgradeOpen(false);
+                if (!v) setSelectedSub((cur) => (upgradeOpen ? cur : cur)); // biarkan selectedSub tetap, atau bisa di-null-kan jika mau
+              }}
+              productCode={ctx?.productCode || ""}
+              packageCode={ctx?.packageCode || ""}
+              currentDurationCode={ctx?.durationCode}
+              onConfirm={handleConfirmRenew}
+              loading={processing}
+            />
+          )}
+
+          {ctx && (
+            <UpgradeModal
+              open={upgradeOpen}
+              onOpenChange={(v) => {
+                setUpgradeOpen(v);
+                if (v) setRenewOpen(false);
+              }}
+              productCode={ctx?.productCode || ""}
+              currentPackageCode={ctx?.packageCode || ""}
+              currentDurationCode={ctx?.durationCode}
+              onConfirm={handleConfirmUpgrade}
+              loading={processing}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

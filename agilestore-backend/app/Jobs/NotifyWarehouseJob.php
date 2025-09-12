@@ -6,38 +6,75 @@ use App\Models\Order;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class NotifyWarehouseJob implements ShouldQueue
 {
-    use Dispatchable, Queueable;
+    use Dispatchable, Queueable, InteractsWithQueue;
 
-    public $tries = 5;              // maksimal retry
-    public $backoff = [10, 30, 60]; // detik (incremental backoff)
+    /**
+     * Maksimal retry oleh queue worker.
+     * (Selain ini, kita pakai release() manual saat 5xx).
+     */
+    public $tries = 5;
+
+    /**
+     * Backoff (detik) antar percobaan.
+     */
+    public $backoff = [10, 30, 60,  120];
 
     public function __construct(public string $orderId) {}
 
     public function handle(): void
     {
         $order = Order::find($this->orderId);
-        if (!$order) return;
+        if (!$order) {
+            Log::warning('[WH] order not found, skip', ['order_id' => $this->orderId]);
+            return;
+        }
 
         // Hindari kirim ulang bila mau—opsional: simpan flag di order (mis. provision_notified_at)
         // if ($order->provision_notified_at) return;
 
+        // Kirim hanya saat PAID (idempotent: warehouse harus aman jika menerima ulang dengan idempotency-key sama)
+        if ($order->status !== 'paid') {
+            Log::info('[WH] order not paid yet, skip', [
+                'order_id' => $order->id,
+                'status'   => $order->status,
+            ]);
+            return;
+        }
+
         $payload = [
-            'id'         => (string) Str::uuid(), // idempotent di Warehouse
-            'order_id'       => $order->id,
-            'customer_id'    => $order->customer_id,
-            'product_code'   => $order->product_code,   // gunakan code, bukan nama
-            'product_id'     => $order->product_id ?? null,
-            'customer_name'  => $order->customer_name,
-            'customer_email' => $order->customer_email,
-            'customer_phone' => $order->customer_phone,
+            'id'              => (string) Str::uuid(),   // idempotency key di warehouse
+            'order_id'        => (string) $order->id,
+            'customer_id'     => (string) $order->customer_id,
+
+            'intent'          => $order->intent,         // purchase|renew|upgrade
+            'base_order_id'   => $order->base_order_id,  // untuk renew/upgrade
+
+            'product_code'    => $order->product_code,
+            'product_name'    => $order->product_name,
+            'package'         => ['code'=>$order->package_code,'name'=>$order->package_name],
+            'duration'        => ['code'=>$order->duration_code,'name'=>$order->duration_name],
+
+            'start_date'      => optional($order->start_date)->toDateString(),
+            'end_date'        => optional($order->end_date)->toDateString(),
+            'is_active'       => (bool) $order->is_active,
+
+            'midtrans_order_id' => $order->midtrans_order_id,
+            'subscription_instance_id' => data_get($order->meta, 'subscription_instance_id'),
+
+            // meta untuk kredensial/komunikasi
+            'customer_name'   => $order->customer_name,
+            'customer_email'  => $order->customer_email,
+            'customer_phone'  => $order->customer_phone,
         ];
 
+        // Endpoint & Security
         $url = rtrim(env('WAREHOUSE_URL', ''), '/').'/api/provisioning/jobs';
         if (!$url || !str_starts_with($url, 'http')) {
             Log::warning('WAREHOUSE_URL not set or invalid, skip notify');
@@ -47,18 +84,24 @@ class NotifyWarehouseJob implements ShouldQueue
         $body      = json_encode($payload);
         $signature = hash_hmac('sha256', $body, env('WAREHOUSE_SECRET', ''));
 
+        // Gunakan Idempotency-Key = order UUID supaya
+        // pengiriman ulang (retry) tidak membuat duplikasi di Warehouse.
+        $idempotencyKey = (string) $order->id;
+
         Log::info('Notify warehouse trying', [
             'url' => $url,
             'has_secret' => (bool) env('WAREHOUSE_SECRET'),
             'order_id' => (string)$order->id,
+            'intent' => $order->intent,
             'customer_id' => (string)$order->customer_id,
             'status' => $order->status,
         ]);
 
-        $resp = Http::withHeaders([
+        $resp = Http::timeout(20)->connectTimeout(10)->withHeaders([
             'Accept'            => 'application/json',
             'Content-Type'      => 'application/json',
             'X-Agile-Signature' => $signature,
+            'Idempotency-Key'   => $idempotencyKey,
         ])->post($url, $payload);
 
         Log::info('Notify warehouse response', [
@@ -66,19 +109,34 @@ class NotifyWarehouseJob implements ShouldQueue
             'body'   => $resp->body(),
         ]);
 
-        if (!$resp->successful()) {
-            Log::error('Notify warehouse failed', [
-                'status' => $resp->status(),
-                'body'   => $resp->body(),
-            ]);
-            $this->release(30); // retry nanti
+        if ($resp->serverError()) {
+            // 5xx → release biar retry via queue
+            $this->release(60);
             return;
         }
 
-        Log::info('Notify warehouse success', ['order_id' => $order->id, 'data' => $payload]);
+        if (!$resp->successful()) {
+            // 4xx: biasanya problem payload/auth → log error dan biarkan job failed
+            Log::error('[WH] non-success', [
+                'status' => $resp->status(),
+                'body'   => $resp->body(),
+            ]);
+            throw new \RuntimeException('Warehouse responded non-2xx');
+        }
 
-        // Opsional: tandai sudah notify
-        // $order->provision_notified_at = now();
-        // $order->save();
+        // if (!$resp->successful()) {
+        //     Log::error('Notify warehouse failed', [
+        //         'status' => $resp->status(),
+        //         'body'   => $resp->body(),
+        //     ]);
+        //     $this->release(60); // retry nanti
+        //     return;
+        // }
+
+        Log::info('Notify warehouse success', ['order_id' => $order->id]);
+
+        // tandai sudah notify
+        $order->provision_notified_at = now();
+        $order->save();
     }
 }
