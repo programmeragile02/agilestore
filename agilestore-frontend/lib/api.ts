@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-const API_BASE = "http://localhost:8000/api/";
+const API_BASE = "http://localhost:8001/api/";
 /**
  * Customer AUTH.
  */
@@ -103,23 +103,24 @@ api.interceptors.response.use(
 // Fetch all products
 // Fetch all products (langsung ke Laravel)
 export const fetchProducts = async () => {
-  const { data } = await api.get("products")
-  if (!data?.success) throw new Error(data?.error || "Failed to fetch products")
-  return data.data
-}
+  const { data } = await api.get("products");
+  if (!data?.success)
+    throw new Error(data?.error || "Failed to fetch products");
+  return data.data;
+};
 
 // Fetch detail product
 export const fetchProductDetail = async (productCode: string) => {
-  const { data } = await api.get(`products/${encodeURIComponent(productCode)}`)
-  if (!data?.success) throw new Error(data?.error || "Failed to fetch product detail")
-  return data.data
-}
+  const { data } = await api.get(`products/${encodeURIComponent(productCode)}`);
+  if (!data?.success)
+    throw new Error(data?.error || "Failed to fetch product detail");
+  return data.data;
+};
 
 // fetch landing page
 export async function fetchLandingPage(productCode: string) {
-  const {data} = await api.get(`catalog/products/landing/${productCode}`, {
-  });
-  return data?.data ?? data;// konsisten dengan pola kamu
+  const { data } = await api.get(`catalog/products/landing/${productCode}`, {});
+  return data?.data ?? data; // konsisten dengan pola kamu
 }
 
 // ===============================
@@ -162,8 +163,11 @@ export interface CustomerTokenResponse {
 
 // Login With Google
 export async function loginWithGoogle(idToken: string) {
-  const { data } = await api.post("customer/oauth/google", { id_token: idToken });
-  if (!data?.access_token) throw new Error(data?.message || "Google login failed");
+  const { data } = await api.post("customer/oauth/google", {
+    id_token: idToken,
+  });
+  if (!data?.access_token)
+    throw new Error(data?.message || "Google login failed");
   setCustomerToken(String(data.access_token)); // TOKEN_KEY = customer_access_token
   return data as CustomerTokenResponse;
 }
@@ -172,7 +176,8 @@ export async function loginWithGoogle(idToken: string) {
 export async function registerCustomer(payload: CustomerRegisterPayload) {
   // POST /api/customer/register -> { success, message, data: CustomerUser }
   const { data } = await api.post("customer/register", payload);
-  if (data?.success === false) throw new Error(data?.message || "Registration failed");
+  if (data?.success === false)
+    throw new Error(data?.message || "Registration failed");
   return data as { success: true; message: string; data: CustomerUser };
 }
 
@@ -189,8 +194,11 @@ export async function loginCustomer(payload: CustomerLoginPayload) {
 export async function getCustomerMe() {
   // GET /api/customer/me -> { success, data: CustomerUser }
   const { data } = await api.get("customer/me");
-  if (data?.success === false) throw new Error(data?.message || "Failed to fetch profile");
-  console.log(data.data.provider_avatar_url)
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch profile");
+  console.log(data.data.provider_avatar_url);
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch profile");
   return data.data as CustomerUser;
 }
 
@@ -211,9 +219,12 @@ export async function logoutCustomer() {
 // }
 
 // Update Profile (full_name/email/phone/company)
-export async function updateCustomerProfile(partial: Partial<Omit<CustomerRegisterPayload, "password">>) {
+export async function updateCustomerProfile(
+  partial: Partial<Omit<CustomerRegisterPayload, "password">>
+) {
   const { data } = await api.put("customer/profile", partial);
-  if (data?.success === false) throw new Error(data?.message || "Update profile failed");
+  if (data?.success === false)
+    throw new Error(data?.message || "Update profile failed");
   return data as { success: true; message: string; data: CustomerUser };
 }
 
@@ -224,35 +235,51 @@ export async function uploadCustomerProfilePhoto(file: File) {
   const { data } = await api.post("customer/profile/photo", fd, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-  if (data?.success === false) throw new Error(data?.message || "Upload photo failed");
-  return data as { success: true; message: string; data: { profile_photo: string; profile_photo_url: string } };
+  if (data?.success === false)
+    throw new Error(data?.message || "Upload photo failed");
+  return data as {
+    success: true;
+    message: string;
+    data: { profile_photo: string; profile_photo_url: string };
+  };
 }
 
 // Delete Profile Photo
 export async function deleteCustomerProfilePhoto() {
   const { data } = await api.delete("customer/profile/photo");
-  if (data?.success === false) throw new Error(data?.message || "Delete photo failed");
+  if (data?.success === false)
+    throw new Error(data?.message || "Delete photo failed");
   return data as { success: true; message: string };
 }
 
 // Change Password
-export async function changeCustomerPassword(payload: { current_password: string; new_password: string }) {
-  const { data } = await api.put("customer/change-password", payload);
-  if (data?.success === false) throw new Error(data?.message || "Change password failed");
+export async function changeCustomerPassword(payload: {
+  current_password: string;
+  new_password: string;
+}) {
+  const { data } = await api.post("customer/change-password", payload);
+  if (data?.success === false)
+    throw new Error(data?.message || "Change password failed");
   return data as { success: true; message: string };
 }
 
 // Forgot Password
 export async function forgotCustomerPassword(email: string) {
   const { data } = await api.post("customer/forgot-password", { email });
-  if (data?.success === false) throw new Error(data?.message || "Forgot password failed");
+  if (data?.success === false)
+    throw new Error(data?.message || "Forgot password failed");
   return data as { success: true; message: string };
 }
 
 // Reset Password
-export async function resetCustomerPassword(payload: { email: string; token: string; new_password: string }) {
+export async function resetCustomerPassword(payload: {
+  email: string;
+  token: string;
+  new_password: string;
+}) {
   const { data } = await api.post("customer/reset-password", payload);
-  if (data?.success === false) throw new Error(data?.message || "Reset password failed");
+  if (data?.success === false)
+    throw new Error(data?.message || "Reset password failed");
   return data as { success: true; message: string };
 }
 
@@ -294,9 +321,9 @@ export type CreateRenewPayload = {
 };
 
 export type CreateUpgradePayload = {
-  base_order_id: string;      // id UUID order sebelumnya
+  base_order_id: string; // id UUID order sebelumnya
   product_code: string;
-  package_code: string;   // paket tujuan
+  package_code: string; // paket tujuan
   // kalau in-place & periode tidak berubah, backend bisa abaikan durasi;
   // tapi kalau mau tetap kirim:
   duration_code?: string;
@@ -314,20 +341,23 @@ export type CreateOrderResponse = {
 // New order (Purchase)
 export async function createPurchaseOrder(payload: CreatePurchasePayload) {
   const { data } = await api.post("orders", payload);
-  if (data?.success === false) throw new Error(data?.message || "Failed to create purchase order");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to create purchase order");
   return data.data as CreateOrderResponse;
 }
 
 // Renew (Perpanjangan)
 export async function createRenewOrder(payload: CreateRenewPayload) {
   const { data } = await api.post("orders/renew", payload);
-  if (data?.success === false) throw new Error(data?.message || "Failed to create renew order");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to create renew order");
   return data.data as CreateOrderResponse;
 }
 
 export async function createUpgradeOrder(payload: CreateUpgradePayload) {
   const { data } = await api.post("orders/upgrade", payload);
-  if (data?.success === false) throw new Error(data?.message || "Failed to create upgrade order");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to create upgrade order");
   return data.data as CreateOrderResponse;
 }
 
@@ -348,8 +378,8 @@ export type MyProductsItem = {
   order_id: string;
   midtrans_order_id: string;
   status: "paid" | "expired" | "failed" | string;
-  is_active: boolean;              // flag DB
-  is_currently_active: boolean;    // hasil hitung now()
+  is_active: boolean; // flag DB
+  is_currently_active: boolean; // hasil hitung now()
   price: number;
   discount: number;
   total: number;
@@ -363,7 +393,12 @@ export type MyProductsItem = {
 
 export type MyProductsResponse = {
   items: MyProductsItem[];
-  meta: { current_page: number; per_page: number; total: number; last_page: number };
+  meta: {
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+  };
 };
 
 /**
@@ -372,9 +407,14 @@ export type MyProductsResponse = {
  * @param params.page
  * @param params.per_page
  */
-export async function fetchMyProducts(params?: { active?: 0 | 1; page?: number; per_page?: number }): Promise<MyProductsResponse> {
+export async function fetchMyProducts(params?: {
+  active?: 0 | 1;
+  page?: number;
+  per_page?: number;
+}): Promise<MyProductsResponse> {
   const { data } = await api.get("customer/my-products", { params });
-  if (data?.success === false) throw new Error(data?.message || "Failed to fetch my products");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch my products");
   // bentuk data: { success, data: { items, meta } }
   return data.data as MyProductsResponse;
 }
@@ -383,7 +423,7 @@ export async function fetchMyProducts(params?: { active?: 0 | 1; page?: number; 
 export type InvoiceItem = {
   order_id: string;
   midtrans_order_id: string;
-  date: string;             // "2025-01-15"
+  date: string; // "2025-01-15"
   product_name: string;
   package_name: string;
   amount: number;
@@ -395,7 +435,12 @@ export type InvoiceItem = {
 
 export type InvoicesResponse = {
   items: InvoiceItem[];
-  meta: { current_page: number; per_page: number; total: number; last_page: number };
+  meta: {
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+  };
 };
 
 /** GET /api/customer/invoices?status=&page=&per_page= */
@@ -405,7 +450,8 @@ export async function fetchCustomerInvoices(params?: {
   per_page?: number;
 }): Promise<InvoicesResponse> {
   const { data } = await api.get("customer/invoices", { params });
-  if (data?.success === false) throw new Error(data?.message || "Failed to fetch invoices");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch invoices");
   return data.data as InvoicesResponse;
 }
 
@@ -417,17 +463,22 @@ export type SubscriptionsItem = {
   duration: { code: string; name?: string | null };
   start_date: string | null;
   end_date: string | null;
-  is_active: boolean;              // flag DB
-  is_currently_active: boolean;    // hasil hitung now()
+  is_active: boolean; // flag DB
+  is_currently_active: boolean; // hasil hitung now()
   status: string;
   meta?: {
     last_paid_order_id?: string; // <— pakai ini utk base_order_id
   };
-}
+};
 
 export type SubscriptionsResponse = {
   items: SubscriptionsItem[];
-  meta: { current_page: number; per_page: number; total: number; last_page: number };
+  meta: {
+    current_page: number;
+    per_page: number;
+    total: number;
+    last_page: number;
+  };
 };
 
 /**
@@ -436,9 +487,14 @@ export type SubscriptionsResponse = {
  * @param params.page
  * @param params.per_page
  */
-export async function fetchSubscriptions(params?: { active?: 0 | 1; page?: number; per_page?: number }): Promise<SubscriptionsResponse> {
+export async function fetchSubscriptions(params?: {
+  active?: 0 | 1;
+  page?: number;
+  per_page?: number;
+}): Promise<SubscriptionsResponse> {
   const { data } = await api.get("customer/subscriptions", { params });
-  if (data?.success === false) throw new Error(data?.message || "Failed to fetch subscriptions");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch subscriptions");
   // bentuk data: { success, data: { items, meta } }
   return data.data as SubscriptionsResponse;
 }
@@ -459,11 +515,15 @@ export type AddonCatalogResponse = {
 };
 
 // GET /api/catalog/addons?product_code=&package_code=
-export async function fetchAddonCatalog(productCode: string, packageCode: string) {
+export async function fetchAddonCatalog(
+  productCode: string,
+  packageCode: string
+) {
   const { data } = await api.get("catalog/addons", {
     params: { product_code: productCode, package_code: packageCode },
   });
-  if (data?.success === false) throw new Error(data?.message || "Failed to fetch add-on catalog");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to fetch add-on catalog");
   return data.data as AddonCatalogResponse;
 }
 
@@ -477,14 +537,47 @@ export type CreateAddonOrderPayload = {
 
 export async function createAddonOrder(payload: CreateAddonOrderPayload) {
   const { data } = await api.post("orders/addon", payload);
-  if (data?.success === false) throw new Error(data?.message || "Failed to create add-on order");
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to create add-on order");
   return data.data as { order_id: string; snap_token: string; total: number };
 }
 
 // === INVOICE: Download PDF ===
 export async function downloadInvoice(orderId: string): Promise<Blob> {
-  const { data } = await api.get(`orders/${encodeURIComponent(orderId)}/invoice`, {
-    responseType: "blob", // <-- penting untuk PDF
-  });
+  const { data } = await api.get(
+    `orders/${encodeURIComponent(orderId)}/invoice`,
+    {
+      responseType: "blob", // <-- penting untuk PDF
+    }
+  );
   return data as Blob;
 }
+
+// Agile Store Setting
+export type AgileStoreSectionResp<T = any> = {
+  id?: number;
+  key: string;
+  name?: string | null;
+  enabled?: boolean;
+  order?: number;
+  theme?: Record<string, any> | null;
+  content?: T | null;
+  items?: any[]; // bentuk item tergantung section
+};
+
+async function getSection<T = any>(
+  key: string,
+  init?: RequestInit
+): Promise<AgileStoreSectionResp<T> | null> {
+  const res = await fetch(`${API_BASE}agile-store/sections/${key}`, {
+    cache: "no-store",
+    ...(init ?? {}),
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  return json?.data ?? null;
+}
+
+export const AgileStoreAPI = {
+  getSection,
+};

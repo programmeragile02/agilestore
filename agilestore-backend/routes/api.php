@@ -7,6 +7,9 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderInvoiceController;
 use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\Payments\MidtransWebhookController;
+use App\Http\Controllers\AgileSectionController;
+use App\Http\Controllers\AgileStoreController;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -91,3 +94,25 @@ Route::delete('/catalog/products/{codeOrId}/landing/sections/{sectionId}', [Land
 
 // Add on catalog
 Route::get('/catalog/addons', [CatalogController::class, 'addons']);
+// Agile Store Setting
+
+
+
+Route::prefix('agile-store')->group(function () {
+    // Sections
+    Route::get('/sections',                      [AgileStoreController::class, 'index']);
+    Route::get('/sections/{key}',                [AgileStoreController::class, 'showByKey']); // with items
+    Route::post('/sections/save',                [AgileStoreController::class, 'saveSection']); // upsert + items
+    Route::post('/sections/{id}/toggle',         [AgileStoreController::class, 'toggleEnabled']);
+    Route::post('/sections/{id}/duplicate',      [AgileStoreController::class, 'duplicateSection']);
+    Route::delete('/sections/{id}',              [AgileStoreController::class, 'destroySection']);
+
+    // Items
+    Route::post('/sections/{id}/reorder-items',  [AgileStoreController::class, 'reorderItems']);
+    Route::post('/items/save',                   [AgileStoreController::class, 'saveItem']);
+    Route::delete('/items/{id}',                 [AgileStoreController::class, 'destroyItem']);
+
+    // Export/Import (opsional)
+    Route::get('/sections/{id}/export',          [AgileStoreController::class, 'exportSection']);
+    Route::post('/sections/import',              [AgileStoreController::class, 'importSection']);
+});
