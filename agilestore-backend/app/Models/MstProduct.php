@@ -45,6 +45,12 @@ class MstProduct extends Model
         return $this->hasMany(MstProductPricelist::class, 'product_code', 'product_code');
     }
 
+    public function packageMatrices()
+    {
+        // local key = 'code' (varchar), foreign key = 'product_code'
+        return $this->hasMany(MstPackageMatrix::class, 'product_code', 'code');
+    }
+
      /* ---- Scopes ---- */
     public function scopeActive($q)
     {

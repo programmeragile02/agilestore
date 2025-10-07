@@ -22,7 +22,7 @@ import {
   ArrowRight,
   Wallet,
 } from "lucide-react";
-import { api, getOrder, refreshOrderStatus } from "@/lib/api";
+import { api, downloadInvoice, getOrder, refreshOrderStatus } from "@/lib/api";
 import Link from "next/link";
 
 declare global {
@@ -73,7 +73,6 @@ type Order = {
   customer?: { id: string; name: string; email: string; phone?: string };
   created_at?: string;
   paid_at?: string | null;
-
 };
 
 /* =========================
@@ -133,7 +132,10 @@ function formatIntent(intent?: string): string {
     purchase: "Purchase",
   };
 
-  return map[intent.toLowerCase()] ?? intent.charAt(0).toUpperCase() + intent.slice(1);
+  return (
+    map[intent.toLowerCase()] ??
+    intent.charAt(0).toUpperCase() + intent.slice(1)
+  );
 }
 
 export default function OrderDetailPage() {
@@ -163,6 +165,9 @@ export default function OrderDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [opening, setOpening] = useState(false);
+
+  // download invoice
+  const [downloading, setDownloading] = useState(false);
 
   const openSnap = () => {
     if (!order?.snap_token) return; // pastikan token ada
@@ -288,6 +293,39 @@ export default function OrderDetailPage() {
       setRefreshing(false);
     }
   };
+
+  // handle download pdf
+  async function handleDownloadInvoice() {
+    if (!order) return;
+    try {
+      setDownloading(true);
+
+      // backend route pakai {id} = ID DB order.
+      // endpoint /orders/{id} kamu juga pakai parameter yang sama.
+      // respons show: 'order_id' => pakai ini.
+      const orderId = (order as any).order_id;
+      if (!orderId) throw new Error("Order ID not found");
+
+      const blob = await downloadInvoice(orderId);
+
+      // nama file ikut midtrans_order_id (sesuai permintaan)
+      const filename = `invoice-${order.midtrans_order_id}.pdf`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Gagal mengunduh invoice. Coba lagi ya.");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   if (loading || !order) {
     return (
@@ -619,15 +657,19 @@ export default function OrderDetailPage() {
 
                 {/* Secondary Actions */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    // onClick={handleDownloadInvoice}
-                    className="border-slate-300 hover:bg-indigo-600 bg-transparent cursor-pointer"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Invoice
-                  </Button>
+                  {order.status === "paid" &&
+                    searchParams.get("status") === "success" && (
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={handleDownloadInvoice}
+                        disabled={downloading}
+                        className="border-slate-300 hover:bg-indigo-600 bg-transparent cursor-pointer"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        {downloading ? "Preparing…" : "Download Invoice"}
+                      </Button>
+                    )}
 
                   <Button
                     variant="outline"

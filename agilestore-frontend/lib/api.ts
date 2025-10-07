@@ -160,6 +160,14 @@ export interface CustomerTokenResponse {
   user: CustomerUser;
 }
 
+// Login With Google
+export async function loginWithGoogle(idToken: string) {
+  const { data } = await api.post("customer/oauth/google", { id_token: idToken });
+  if (!data?.access_token) throw new Error(data?.message || "Google login failed");
+  setCustomerToken(String(data.access_token)); // TOKEN_KEY = customer_access_token
+  return data as CustomerTokenResponse;
+}
+
 // Register
 export async function registerCustomer(payload: CustomerRegisterPayload) {
   // POST /api/customer/register -> { success, message, data: CustomerUser }
@@ -182,6 +190,7 @@ export async function getCustomerMe() {
   // GET /api/customer/me -> { success, data: CustomerUser }
   const { data } = await api.get("customer/me");
   if (data?.success === false) throw new Error(data?.message || "Failed to fetch profile");
+  console.log(data.data.provider_avatar_url)
   return data.data as CustomerUser;
 }
 
@@ -228,7 +237,7 @@ export async function deleteCustomerProfilePhoto() {
 
 // Change Password
 export async function changeCustomerPassword(payload: { current_password: string; new_password: string }) {
-  const { data } = await api.post("customer/change-password", payload);
+  const { data } = await api.put("customer/change-password", payload);
   if (data?.success === false) throw new Error(data?.message || "Change password failed");
   return data as { success: true; message: string };
 }
@@ -432,4 +441,50 @@ export async function fetchSubscriptions(params?: { active?: 0 | 1; page?: numbe
   if (data?.success === false) throw new Error(data?.message || "Failed to fetch subscriptions");
   // bentuk data: { success, data: { items, meta } }
   return data.data as SubscriptionsResponse;
+}
+
+// ---------- ADD-ON CATALOG ----------
+export type AddonItem = {
+  feature_code: string;
+  name: string;
+  price_addon: number;
+  included: boolean;
+};
+
+export type AddonCatalogResponse = {
+  product_code: string;
+  package_code: string;
+  currency: string;
+  items: AddonItem[];
+};
+
+// GET /api/catalog/addons?product_code=&package_code=
+export async function fetchAddonCatalog(productCode: string, packageCode: string) {
+  const { data } = await api.get("catalog/addons", {
+    params: { product_code: productCode, package_code: packageCode },
+  });
+  if (data?.success === false) throw new Error(data?.message || "Failed to fetch add-on catalog");
+  return data.data as AddonCatalogResponse;
+}
+
+// ---------- CREATE ADD-ON ORDER ----------
+export type CreateAddonOrderPayload = {
+  product_code: string;
+  // optional: kirim subscription_instance_id kalau kamu pakai multi-instance
+  subscription_instance_id?: string | null;
+  features: string[]; // daftar feature_code yang dipilih (hanya yg tidak included)
+};
+
+export async function createAddonOrder(payload: CreateAddonOrderPayload) {
+  const { data } = await api.post("orders/addon", payload);
+  if (data?.success === false) throw new Error(data?.message || "Failed to create add-on order");
+  return data.data as { order_id: string; snap_token: string; total: number };
+}
+
+// === INVOICE: Download PDF ===
+export async function downloadInvoice(orderId: string): Promise<Blob> {
+  const { data } = await api.get(`orders/${encodeURIComponent(orderId)}/invoice`, {
+    responseType: "blob", // <-- penting untuk PDF
+  });
+  return data as Blob;
 }

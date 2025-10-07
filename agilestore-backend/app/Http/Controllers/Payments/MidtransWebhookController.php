@@ -242,6 +242,11 @@ class MidtransWebhookController extends Controller
      */
     private function applyActivePeriodByIntent(Order $order): void
     {
+        if ($order->intent === 'addon') {
+            // Add-on tidak punya periode
+            return;
+        }
+
         $duration = MstDuration::where('code', $order->duration_code)->first();
         $today = now()->startOfDay();
 
@@ -360,6 +365,30 @@ class MidtransWebhookController extends Controller
 
     private function upsertSubscriptionFromOrder(Order $order): void
     {
+        // ADD-ON: cukup update meta last_paid_order_id, jangan sentuh durasi/paket/tanggal
+        if ($order->intent === 'addon') {
+            $subId = $order->meta['subscription_instance_id'] ?? null;
+            if (!$subId) return;
+
+            $sub = Subscription::firstOrCreate(
+                ['id' => $subId],
+                [
+                    'customer_id'  => $order->customer_id,
+                    'product_code' => $order->product_code,
+                    'product_name' => $order->product_name,
+                    'is_active'    => true,
+                    'status'       => 'active',
+                ]
+            );
+
+            $meta = $sub->meta ?? [];
+            $meta['last_paid_order_id'] = (string) $order->id;
+            $sub->meta = $meta;
+            $sub->save();
+
+            return;
+        }
+
         $subId = $order->meta['subscription_instance_id'] ?? null;
         if (!$subId) {
             // fallback (harusnya tidak terjadi kalau controller sudah benar)

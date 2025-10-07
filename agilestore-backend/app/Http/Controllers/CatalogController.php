@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MstPackageMatrix;
 use App\Models\MstProduct;
+use App\Models\MstProductFeatures;
 use App\Models\MstProductPackage;
 use App\Models\MstDuration;
+use App\Services\AddonService;
 use Illuminate\Http\Request;
 
 class CatalogController extends Controller
@@ -93,12 +96,79 @@ class CatalogController extends Controller
                 'is_default',
             ]);
 
+        // 4) matrik paket fitur
+        $matrixPackage = MstPackageMatrix::query()
+            ->where('product_code', $productCode)
+            ->where('item_type', 'feature')
+            ->get();
+        
+        $features = MstProductFeatures::query()
+            ->where('product_code', $productCode)
+            ->get();
+
         return response()->json([
             'success' => true,
             'data'    => [
                 'product'   => $product,
                 'packages'  => $packages,
                 'durations' => $durations,
+                'package_matrix' => $matrixPackage,
+                'features' => $features
+            ],
+        ]);
+    }
+
+    /**
+     * GET /api/catalog/addons?product_code=...&package_code=...
+     * - Mengembalikan daftar fitur add-on untuk suatu product.
+     * - Jika package_code dikirim, tandai `included=true` untuk fitur yang sudah termasuk paket tsb.
+     */
+    public function addons(Request $req)
+    {
+        $data = $req->validate([
+            'product_code' => 'required|string|exists:mst_products,product_code',
+            'package_code' => 'nullable|string|exists:mst_product_packages,package_code',
+        ]);
+
+        $productCode = $data['product_code'];
+        $packageCode = $data['package_code'] ?? null;
+
+        // 1) Ambil fitur aktif untuk product
+        $features = MstProductFeatures::query()
+            ->where('product_code', $productCode)
+            ->where('is_active', 1)
+            ->get(['feature_code','name','price_addon']);
+
+        // 2) Set included jika ada package_code
+        $includedSet = [];
+        if ($packageCode) {
+            $included = \DB::table('mst_package_matrix as m')
+                ->join('mst_product_packages as p', 'p.id', '=', 'm.package_id')
+                ->where('m.product_code', $productCode)
+                ->where('m.item_type', 'feature')
+                ->where('m.enabled', 1)
+                ->where('p.package_code', $packageCode)
+                ->pluck('m.item_id')              // berisi feature_code
+                ->all();
+            $includedSet = array_flip($included);
+        }
+
+        $items = $features->map(function ($f) use ($includedSet) {
+            return [
+                'feature_code' => (string) $f->feature_code,
+                'name'         => (string) $f->name,
+                'price_addon'  => (int) round($f->price_addon ?? 0),
+                'included'     => isset($includedSet[$f->feature_code]),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'product_code' => $productCode,
+                'package_code' => $packageCode,
+                'currency'     => 'IDR',
+                'items'        => $items,
             ],
         ]);
     }

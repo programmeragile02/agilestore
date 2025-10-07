@@ -55,6 +55,15 @@ import { toast } from "@/hooks/use-toast";
 import { ensureSnap, openSnap } from "@/lib/midtrans";
 import RenewModal from "@/components/billing/RenewModal";
 import UpgradeModal from "@/components/billing/UpgradeModal";
+import AddonModal from "@/components/billing/AddonModal";
+import { createAddonOrder } from "@/lib/api";
+import {
+  changeCustomerPassword,
+  forgotCustomerPassword,
+  resetCustomerPassword,
+} from "@/lib/api";
+import ChangePasswordDialog from "@/components/account/ChangePasswordDialog";
+import ResetPasswordDialog from "@/components/account/ResetPasswordDialog";
 
 // context saat buka modal
 type ModalCtx = {
@@ -157,6 +166,20 @@ export default function MyAccountPage() {
   );
   const [ctx, setCtx] = useState<ModalCtx | null>(null);
   const [processing, setProcessing] = useState(false);
+
+  // Add On Modal
+  const [addonOpen, setAddonOpen] = useState(false);
+  const [addonCtx, setAddonCtx] = useState<{
+    productCode: string;
+    packageCode: string;
+    subscriptionInstanceId?: string | null;
+  } | null>(null);
+
+  // forgot & reset password
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [debugToken, setDebugToken] = useState<string | null>(null); // hanya untuk dev (BE kirim debug_plain_token)
 
   // fetch user
   useEffect(() => {
@@ -463,7 +486,10 @@ export default function MyAccountPage() {
       purchase: "Purchase",
     };
 
-    return map[intent.toLowerCase()] ?? intent.charAt(0).toUpperCase() + intent.slice(1);
+    return (
+      map[intent.toLowerCase()] ??
+      intent.charAt(0).toUpperCase() + intent.slice(1)
+    );
   }
 
   const sidebarItems = [
@@ -534,6 +560,18 @@ export default function MyAccountPage() {
     });
     setRenewOpen(false);
     setUpgradeOpen(true);
+  };
+
+  const openAddonFor = (sub: SubscriptionsItem) => {
+    setSelectedSub(sub);
+    setAddonCtx({
+      productCode: sub.product.code,
+      packageCode: sub.package.code,
+      subscriptionInstanceId: sub.meta?.subscription_instance_id || undefined, // kalau BE isi meta ini
+    });
+    setAddonOpen(true);
+    setRenewOpen(false);
+    setUpgradeOpen(false);
   };
 
   const handleConfirmRenew = async ({
@@ -620,6 +658,74 @@ export default function MyAccountPage() {
     } finally {
       setProcessing(false);
       setUpgradeOpen(false);
+    }
+  };
+
+  // handle reset & forgot password
+  const onChangePassword = async (p: {
+    current_password: string;
+    new_password: string;
+  }) => {
+    setSecurityBusy(true);
+    try {
+      await changeCustomerPassword(p);
+      toast({ title: "Password updated" });
+      setPwdOpen(false);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Change password failed",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setSecurityBusy(false);
+    }
+  };
+
+  const onAskResetLink = async () => {
+    if (!email) return;
+    setSecurityBusy(true);
+    try {
+      const res: any = await forgotCustomerPassword(email);
+      // Backend kamu saat ini mengembalikan debug_plain_token untuk dev.
+      setDebugToken(res?.debug_plain_token ?? null);
+      toast({
+        title: "Reset email sent",
+        description: "Check your inbox for the token.",
+      });
+      setResetOpen(true);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to send reset email",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setSecurityBusy(false);
+    }
+  };
+
+  const onSubmitReset = async ({
+    token,
+    new_password,
+  }: {
+    token: string;
+    new_password: string;
+  }) => {
+    if (!email) return;
+    setSecurityBusy(true);
+    try {
+      await resetCustomerPassword({ email, token, new_password });
+      toast({ title: "Password reset successful" });
+      setResetOpen(false);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Reset failed",
+        description: String(e?.message ?? "Invalid token or other error"),
+      });
+    } finally {
+      setSecurityBusy(false);
     }
   };
 
@@ -1029,12 +1135,20 @@ export default function MyAccountPage() {
                             </p>
                             <p className="text-sm text-slate-600">
                               {invoice.product_name}
-                              {invoice.intent === 'renew' ?
-                                <span className="text-sm text-slate-600"> - {invoice.package_name} - Extended until {formatDate(invoice.end_date)}</span>
-                                : invoice.intent === 'upgrade' ?
-                                <span className="text-sm text-slate-600"> - Upgraded to {invoice.package_name}</span>
-                                : <span> - {invoice.package_name}</span>
-                              }
+                              {invoice.intent === "renew" ? (
+                                <span className="text-sm text-slate-600">
+                                  {" "}
+                                  - {invoice.package_name} - Extended until{" "}
+                                  {formatDate(invoice.end_date)}
+                                </span>
+                              ) : invoice.intent === "upgrade" ? (
+                                <span className="text-sm text-slate-600">
+                                  {" "}
+                                  - Upgraded to {invoice.package_name}
+                                </span>
+                              ) : (
+                                <span> - {invoice.package_name}</span>
+                              )}
                             </p>
                             <p className="text-sm text-slate-500">
                               {formatDate(invoice.date)}
@@ -1113,6 +1227,13 @@ export default function MyAccountPage() {
                             </p>
                           </div>
                           <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => openAddonFor(p)}
+                            >
+                              <Package className="h-4 w-4 mr-2" />
+                              Add-ons
+                            </Button>
                             <Button
                               className="bg-blue-600 hover:bg-blue-700"
                               onClick={() => openRenewFor(p)}
@@ -1210,10 +1331,30 @@ export default function MyAccountPage() {
                     <CardTitle>Security</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <Button variant="outline" className="w-full bg-transparent">
+                    <Button
+                      variant="outline"
+                      className="w-full bg-transparent"
+                      onClick={() => setPwdOpen(true)}
+                    >
                       <Shield className="h-4 w-4 mr-2" />
                       Change Password
                     </Button>
+
+                    <div className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">Forgot your password?</p>
+                        <p className="text-sm text-slate-600">
+                          Send a reset token to your email and set a new one.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={onAskResetLink}
+                        disabled={securityBusy}
+                        className="cursor-pointer"
+                      >
+                        Send Reset Email
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -1468,7 +1609,7 @@ export default function MyAccountPage() {
         </div>
       </div>
 
-      {/* ====== MODAL AREA (selalu render, open controlled) ====== */}
+      {/* ====== MODAL AREA (Renew/Upgrade/Add-on tergantung selectedSub) ====== */}
       {selectedSub && (
         <>
           {ctx && (
@@ -1502,8 +1643,39 @@ export default function MyAccountPage() {
               loading={processing}
             />
           )}
+
+          {selectedSub && addonCtx && (
+            <AddonModal
+              open={addonOpen}
+              onOpenChange={(v) => setAddonOpen(v)}
+              productCode={addonCtx.productCode}
+              packageCode={addonCtx.packageCode}
+              subscriptionInstanceId={addonCtx.subscriptionInstanceId}
+            />
+          )}
         </>
       )}
+
+      {/* ====== SECURITY DIALOGS: harus SELALU dirender ====== */}
+      <ChangePasswordDialog
+        open={pwdOpen}
+        onOpenChange={setPwdOpen}
+        onSubmit={onChangePassword}
+        loading={securityBusy}
+      />
+
+      <ResetPasswordDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        onSubmit={onSubmitReset}
+        loading={securityBusy}
+        email={email}
+        debugHint={debugToken} // opsional dev
+        onResend={async () => {
+          // aktifkan tombol Resend
+          await forgotCustomerPassword(email);
+        }}
+      />x
     </div>
   );
 }

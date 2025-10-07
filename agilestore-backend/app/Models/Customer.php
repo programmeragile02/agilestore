@@ -13,12 +13,16 @@ class Customer extends Authenticatable implements JWTSubject
     protected $table = 'mst_customers';
 
     protected $fillable = [
+        'google_id',
+        'provider',
+        'provider_avatar_url',
         'profile_photo',
         'full_name',
         'email',
         'password',
         'phone',
         'company',
+        'email_verified_at',
         'is_active',
     ];
 

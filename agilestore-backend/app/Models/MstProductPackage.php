@@ -31,4 +31,9 @@ class MstProductPackage extends Model
     {
         return $this->hasMany(MstProductPricelistItem::class, 'package_code', 'package_code');
     }
+
+    public function matrices()
+    {
+        return $this->hasMany(MstPackageMatrix::class, 'package_id');
+    }
 }

@@ -77,9 +77,9 @@ export default function AuthButtons() {
                      flex items-center justify-center ring-0 transition hover:scale-[1.02] cursor-pointer"
           aria-label="Open profile menu"
         >
-          {user.profile_photo_url ? (
+          {user.profile_photo_url || user.provider_avatar_url ? (
             <Image
-              src={user.profile_photo_url}
+              src={user.profile_photo_url || user.provider_avatar_url}
               alt="Profile"
               width={40}
               height={40}

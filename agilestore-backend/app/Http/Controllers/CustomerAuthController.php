@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\CustomerPasswordResetCodeMail;
 use App\Models\Customer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Google\Client as GoogleClient;
 
 class CustomerAuthController extends Controller
 {
@@ -226,24 +229,39 @@ class CustomerAuthController extends Controller
     /**
      * Forgot password.
      */
-    // ini belum lanjut yak harus email real
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => ['required','email']]);
         $email = strtolower(trim($request->input('email')));
 
-        $exists = Customer::where('email', $email)->exists();
-        if ($exists) {
-            $plain = Str::random(64);
+        $cust = Customer::where('email', $email)->first();
+
+        // Selalu balas sukses agar tidak bocorkan apakah email terdaftar
+        if ($cust) {
+            $plain = (string) random_int(100000, 999999); // 6 digit
             $hash  = hash('sha256', $plain);
-            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+
+            \DB::table('customer_password_reset_tokens')->where('email', $email)->delete();
             \DB::table('customer_password_reset_tokens')->insert([
-                'email' => $email, 'token' => $hash, 'created_at' => Carbon::now(),
+                'email'      => $email,
+                'token'      => $hash,
+                'attempts'   => 0,
+                'created_at' => now(),
+                'expires_at' => now()->addMinutes(15),
             ]);
-            // TODO: kirim email berisi $plain (bukan hash)
-            return response()->json(['success'=>true,'message'=>'Reset token generated (check email)','debug_plain_token'=>$plain]);
+
+            // KIRIM EMAIL (boleh ->queue() jika queue sudah di-setup)
+            Mail::to($email)->send(new CustomerPasswordResetCodeMail(
+                fullName: $cust->full_name ?? $email,
+                code: $plain,
+                minutes: 15
+            ));
         }
-        return response()->json(['success'=>true,'message'=>'If the email exists, a reset link has been sent']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'If the email exists, a reset code has been sent'
+        ]);
     }
 
     /**
@@ -253,23 +271,114 @@ class CustomerAuthController extends Controller
     {
         $data = $request->validate([
             'email'        => ['required','email'],
-            'token'        => ['required','string'],
+            'token'        => ['required','string'], // kode 6 digit
             'new_password' => ['required', Password::min(8)->letters()->numbers()],
         ]);
 
-        $rec = \DB::table('customer_password_reset_tokens')->where('email', strtolower(trim($data['email'])))->first();
-        if (!$rec || !hash_equals($rec->token, hash('sha256', $data['token']))) {
-            return response()->json(['success'=>false,'message'=>'Invalid token'], 422);
+        $email = strtolower(trim($data['email']));
+        $rec = \DB::table('customer_password_reset_tokens')->where('email', $email)->first();
+
+        // Validasi ada token
+        if (!$rec) {
+            return response()->json(['success'=>false,'message'=>'Invalid or expired code'], 422);
         }
 
-        $cust = Customer::where('email', $data['email'])->first();
-        if (!$cust) return response()->json(['success'=>false,'message'=>'Akun tidak ditemukan'], 422);
+        // Cek expiry
+        if ($rec->expires_at && now()->greaterThan($rec->expires_at)) {
+            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+            return response()->json(['success'=>false,'message'=>'Code expired'], 422);
+        }
+
+        // Brute-force guard
+        if (($rec->attempts ?? 0) >= 5) {
+            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+            return response()->json(['success'=>false,'message'=>'Too many attempts'], 429);
+        }
+
+        // Cocokkan hash
+        $ok = hash_equals($rec->token, hash('sha256', $data['token']));
+        if (!$ok) {
+            \DB::table('customer_password_reset_tokens')
+                ->where('email',$email)
+                ->update(['attempts' => \DB::raw('attempts + 1')]);
+            return response()->json(['success'=>false,'message'=>'Invalid code'], 422);
+        }
+
+        // Update password
+        $cust = Customer::where('email', $email)->first();
+        if (!$cust) {
+            // hapus token biar tidak nyangkut
+            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+            return response()->json(['success'=>false,'message'=>'Account not found'], 422);
+        }
 
         $cust->password = Hash::make($data['new_password']);
         $cust->save();
 
-        \DB::table('customer_password_reset_tokens')->where('email',$data['email'])->delete();
+        // Hapus token setelah sukses
+        \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
 
-        return response()->json(['success'=>true,'message'=>'Password berhasil direset']);
+        return response()->json(['success'=>true,'message'=>'Password reset successful']);
+    }
+
+    // OAuth Login With Google
+    public function google(Request $request)
+    {
+        $data = $request->validate([
+            'id_token' => ['required','string'],
+        ]);
+
+        $client = new GoogleClient(['client_id' => env('GOOGLE_CLIENT_ID')]);
+        $payload = $client->verifyIdToken($data['id_token']);
+        if (!$payload) {
+            return response()->json(['success'=>false,'message'=>'Invalid Google token'], 401);
+        }
+
+        $googleId = $payload['sub'] ?? null;
+        $email    = strtolower(trim($payload['email'] ?? ''));
+        $name     = $payload['name'] ?? null;
+        $avatar   = $payload['picture'] ?? null;
+        $verified = ($payload['email_verified'] ?? false) ? now() : null;
+
+        if (!$googleId || !$email) {
+            return response()->json(['success'=>false,'message'=>'Incomplete Google profile'], 422);
+        }
+
+        // 1) by google_id → 2) fallback by email (link akun lama)
+        /** @var Customer|null $cust */
+        $cust = Customer::where('google_id',$googleId)->first()
+            ?: Customer::where('email',$email)->first();
+
+        if (!$cust) {
+            $cust = Customer::create([
+                'google_id'          => $googleId,
+                'provider'           => 'google',
+                'provider_avatar_url'=> $avatar,
+                'full_name'          => $name ?: $email,
+                'email'              => $email,
+                'phone'              => '62',
+                'company'            => null,
+                'password'           => Hash::make(Str::random(40)), // dummy kuat
+                'email_verified_at'  => $verified,
+                'is_active'          => true,
+            ]);
+        } else {
+            if (!$cust->google_id) $cust->google_id = $googleId;
+            if ($avatar && !$cust->provider_avatar_url) $cust->provider_avatar_url = $avatar;
+            if ($name && $cust->full_name !== $name) $cust->full_name = $name;
+            if (!$cust->email_verified_at && $verified) $cust->email_verified_at = $verified;
+            if (!$cust->provider) $cust->provider = 'google';
+            $cust->save();
+        }
+
+        if (!$cust->is_active) {
+            return response()->json(['success'=>false,'message'=>'Account disabled'], 403);
+        }
+
+        /** @var \Tymon\JWTAuth\JWTGuard $guard */
+        auth()->shouldUse('customer-api');
+        $token = auth('customer-api')->login($cust);
+
+        return $this->tokenResponse($token); // sudah ada di controllermu
     }
 }

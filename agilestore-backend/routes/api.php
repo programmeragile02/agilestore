@@ -4,6 +4,7 @@ use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CustomerAuthController;
 use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OrderInvoiceController;
 use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\Payments\MidtransWebhookController;
 use Illuminate\Http\Request;
@@ -14,6 +15,8 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 Route::prefix('customer')->group(function () {
+    // oauth google
+    Route::post('/oauth/google', [CustomerAuthController::class, 'google']);
     // Guest
     Route::post('/register',        [CustomerAuthController::class, 'register']);
     // get loginnya nanti respon di illuminate ya bukan respon ini masih dumy
@@ -24,7 +27,7 @@ Route::prefix('customer')->group(function () {
     ], 401);
 })->name('login');
     Route::post('/login',           [CustomerAuthController::class, 'login']);
-    Route::post('/forgot-password', [CustomerAuthController::class, 'forgotPassword']);
+    Route::post('/forgot-password', [CustomerAuthController::class, 'forgotPassword'])->middleware('throttle:5,1'); // max 5 kali / menit per IP
     Route::post('/reset-password',  [CustomerAuthController::class, 'resetPassword']);
 
     // Protected
@@ -56,9 +59,14 @@ Route::middleware('auth:customer-api')->group(function () {
     Route::post('/orders/renew', [OrderController::class, 'renew']);
     // Upgrade paket
     Route::post('/orders/upgrade', [OrderController::class, 'upgrade']);
+    // Add On
+    Route::post('/orders/addon',    [OrderController::class, 'addon']);
 
     // detail order
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+
+    // download inv
+    Route::get('/orders/{id}/invoice', [OrderInvoiceController::class, 'download']);
 
     // refresh status payment(Pembayaran)
     Route::post('/orders/{id}/refresh-status', [OrderStatusController::class, 'refresh'])
@@ -80,3 +88,6 @@ Route::get('/catalog/products/landing/{codeOrId}', [LandingPageController::class
 Route::put  ('/catalog/products/{codeOrId}/landing', [LandingPageController::class, 'upsert']);
 Route::patch('/catalog/products/{codeOrId}/landing/sections/{sectionId}', [LandingPageController::class, 'updateSection']);
 Route::delete('/catalog/products/{codeOrId}/landing/sections/{sectionId}', [LandingPageController::class, 'destroySection']);
+
+// Add on catalog
+Route::get('/catalog/addons', [CatalogController::class, 'addons']);

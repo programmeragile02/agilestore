@@ -56,6 +56,32 @@ import {
 } from "@/components/ui/dialog";
 
 // Types
+type PackageMatrixRow = {
+  id: number;
+  product_code: string;
+  package_id: number;
+  item_type: "feature" | "menu";
+  item_id: string; // feature_code atau menu_code
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type FeatureRow = {
+  id: string; // "TIRTABENING:1"
+  product_code: string;
+  item_type: "FEATURE" | "SUBFEATURE";
+  feature_code: string; // mis. "kirim.notif.whatsapp"
+  name: string;
+  description?: string;
+  module_name?: string;
+  menu_parent_code?: string | null; // parent untuk SUBFEATURE
+  is_active: boolean;
+  order_number: number;
+  price_addon: number;
+  // ...timestamp fields
+};
+
 type BackendPayload = {
   product: {
     product_code: string;
@@ -96,6 +122,8 @@ type BackendPayload = {
     unit: string; // month | year
     is_default: boolean;
   }>;
+  package_matrix: PackageMatrixRow[];
+  features: FeatureRow[];
 };
 
 type LandingSection = {
@@ -285,7 +313,7 @@ function ProductFeatureGrid({ data }: { data: any }) {
           ) : null}
         </div>
         <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((f, i) => (
+          {list.slice(0,3).map((f, i) => (
             <div
               key={i}
               className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-200"
@@ -438,9 +466,13 @@ function ProductDemoGallery({ data }: { data: any }) {
 function ProductPricingStandalone({
   productCode,
   packages,
+  packageMatrix,
+  features,
 }: {
   productCode: string;
   packages: BackendPayload["packages"];
+  packageMatrix: BackendPayload["package_matrix"];
+  features: BackendPayload["features"];
 }) {
   const router = useRouter();
 
@@ -472,18 +504,56 @@ function ProductPricingStandalone({
     return row!;
   };
 
+  // helper: ambil package_id real dari salah satu baris pricelist
+  const getPackageId = (pkg: BackendPayload["packages"][number]) =>
+    pkg.pricelist?.[0]?.package_id ?? null;
+
+  // index fitur by code → nama
+  const featureNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of features) m.set(f.feature_code, f.name);
+    return m;
+  }, [features]);
+
   const cards = (packages || []).map((pkg) => {
     const monthlyRow = pickMonthly(pkg);
+    const pkgId = getPackageId(pkg);
+
+    // ambil matrix baris untuk paket ini
+    const rows =
+      pkgId == null
+        ? []
+        : packageMatrix.filter(
+            (r) =>
+              r.package_id === pkgId && r.item_type === "feature" && r.enabled
+          );
+
+    // translate item_id → nama fitur (fallback: prettify kode)
+    const featureList = rows
+      .map((r) => {
+        const code = r.item_id;
+        const name = featureNameByCode.get(code);
+        if (name) return name;
+        // fallback prettify "export.excel" → "Export Excel"
+        return code
+          .split(".")
+          .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+          .join(" ");
+      })
+      // urutkan unik & rapi
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort((a, b) => a.localeCompare(b));
+
     return {
       id: pkg.package_code,
       name: pkg.name,
       description: pkg.description || "",
-      popular:
-        // pkg.package_code.toLowerCase().includes("professional") ||
-        pkg.package_code.toLowerCase().includes("medium"),
+      popular: pkg.package_code.toLowerCase().includes("premium"),
       monthlyRow,
+      features: featureList,
     };
   });
+  console.log(cards);
 
   if (!cards.length) return null;
 
@@ -572,6 +642,18 @@ function ProductPricingStandalone({
                     Choose Plan
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
+
+                  {/* ======= FITUR PER PAKET (dari package_matrix) ======= */}
+                  <ul className="space-y-3 text-left">
+                    {(c.features.length ? c.features : ["—"])
+                      // .slice(0, 12) // tampilkan maksimal 12, biar kartu tetap rapi
+                      .map((name, i) => (
+                        <li key={i} className="flex items-start">
+                          <Check className="h-5 w-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-gray-700">{name}</span>
+                        </li>
+                      ))}
+                  </ul>
                 </CardContent>
               </Card>
             ))}
@@ -704,13 +786,18 @@ function ProductTestimonials({ data }: { data: any }) {
         </div>
         {/* Trust Indicators */}
         <div className="mt-12 text-center">
-          <p className="text-sm text-gray-500 mb-4">Trusted by leading property management companies</p>
+          <p className="text-sm text-gray-500 mb-4">
+            Trusted by leading property management companies
+          </p>
           <div className="flex flex-wrap justify-center items-center gap-8 opacity-60">
-          {companies.map((c, i) => (
-            <div key={i} className="text-lg font-semibold text-gray-400">{c}</div>
-          ))}
+            {companies.map((c, i) => (
+              <div key={i} className="text-lg font-semibold text-gray-400">
+                {c}
+              </div>
+            ))}
           </div>
-        </div>
+                  
+        </div>
       </div>
     </section>
   );
@@ -1047,6 +1134,10 @@ export default function ProductPage() {
   // landing page
   const [landingSections, setLandingSections] = useState<LandingSection[]>([]);
 
+  // matrix
+  const [packageMatrix, setPackageMatrix] = useState<PackageMatrixRow[]>([]);
+  const [features, setFeatures] = useState<FeatureRow[]>([]);
+
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -1073,6 +1164,8 @@ export default function ProductPage() {
           setProductDesc(payload.product.description || undefined);
           setPackages(payload.packages || []);
           setDurations(payload.durations || []);
+          setPackageMatrix(payload.package_matrix || []);
+          setFeatures(payload.features || []);
           setLandingSections(
             (landing?.sections || []).filter((s: LandingSection) => s.enabled)
           );
@@ -1174,7 +1267,12 @@ export default function ProductPage() {
         )}
         {sFeatures && <ProductFeatureGrid data={sFeatures.content} />}
         <ProductDemoGallery data={sDemo.content} />
-        <ProductPricingStandalone productCode={code} packages={packages} />
+        <ProductPricingStandalone
+          productCode={code}
+          packages={packages}
+          packageMatrix={packageMatrix}
+          features={features}
+        />
         {sTestimonials && <ProductTestimonials data={sTestimonials.content} />}
         {sFAQ && <ProductFAQStandalone data={sFAQ.content} />}
         {/* {sCTA && <ProductFinalCTA productCode={code} />} */}
