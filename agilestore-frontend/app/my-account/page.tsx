@@ -33,6 +33,7 @@ import {
   MessageCircle,
   Phone,
   Mail,
+  Loader2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -691,7 +692,7 @@ export default function MyAccountPage() {
       setDebugToken(res?.debug_plain_token ?? null);
       toast({
         title: "Reset email sent",
-        description: "Check your inbox for the token.",
+        description: "Check your inbox for the code.",
       });
       setResetOpen(true);
     } catch (e: any) {
@@ -1351,8 +1352,16 @@ export default function MyAccountPage() {
                         onClick={onAskResetLink}
                         disabled={securityBusy}
                         className="cursor-pointer"
+                        aria-busy={securityBusy}
                       >
-                        Send Reset Email
+                        {securityBusy ? (
+                          <span className="inline-flex items-center">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending...
+                          </span>
+                        ) : (
+                          "Send Reset Email"
+                        )}
                       </Button>
                     </div>
                   </CardContent>
@@ -1668,14 +1677,11 @@ export default function MyAccountPage() {
         open={resetOpen}
         onOpenChange={setResetOpen}
         onSubmit={onSubmitReset}
+        onResend={onAskResetLink} // <— ini penting!
         loading={securityBusy}
         email={email}
-        debugHint={debugToken} // opsional dev
-        onResend={async () => {
-          // aktifkan tombol Resend
-          await forgotCustomerPassword(email);
-        }}
-      />x
+        debugHint={debugToken}
+      />
     </div>
   );
 }

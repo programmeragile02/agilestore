@@ -196,9 +196,6 @@ export async function getCustomerMe() {
   const { data } = await api.get("customer/me");
   if (data?.success === false)
     throw new Error(data?.message || "Failed to fetch profile");
-  console.log(data.data.provider_avatar_url);
-  if (data?.success === false)
-    throw new Error(data?.message || "Failed to fetch profile");
   return data.data as CustomerUser;
 }
 
@@ -257,7 +254,7 @@ export async function changeCustomerPassword(payload: {
   current_password: string;
   new_password: string;
 }) {
-  const { data } = await api.post("customer/change-password", payload);
+  const { data } = await api.put("customer/change-password", payload);
   if (data?.success === false)
     throw new Error(data?.message || "Change password failed");
   return data as { success: true; message: string };

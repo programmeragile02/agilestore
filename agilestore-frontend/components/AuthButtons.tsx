@@ -79,7 +79,7 @@ export default function AuthButtons() {
         >
           {user.profile_photo_url || user.provider_avatar_url ? (
             <Image
-              src={user.profile_photo_url || user.provider_avatar_url}
+              src={`${user.profile_photo_url || user.provider_avatar_url}`}
               alt="Profile"
               width={40}
               height={40}

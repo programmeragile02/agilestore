@@ -6,6 +6,7 @@ use App\Mail\CustomerPasswordResetCodeMail;
 use App\Models\Customer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -236,13 +237,23 @@ class CustomerAuthController extends Controller
 
         $cust = Customer::where('email', $email)->first();
 
-        // Selalu balas sukses agar tidak bocorkan apakah email terdaftar
+        // SELALU balas sukses, tanpa bocorkan akun ada/tidak
         if ($cust) {
-            $plain = (string) random_int(100000, 999999); // 6 digit
+            // Anti-spam: kalau masih ada token yang dibuat < 60 detik, jangan kirim baru
+            $existing = DB::table('customer_password_reset_tokens')->where('email',$email)->first();
+            if ($existing && now()->diffInSeconds(Carbon::parse($existing->created_at)) < 60) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'If the email exists, a reset code has been sent'
+                ]);
+            }
+
+            // Kode 6 digit dengan nol di depan bila perlu
+            $plain = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
             $hash  = hash('sha256', $plain);
 
-            \DB::table('customer_password_reset_tokens')->where('email', $email)->delete();
-            \DB::table('customer_password_reset_tokens')->insert([
+            DB::table('customer_password_reset_tokens')->where('email', $email)->delete();
+            DB::table('customer_password_reset_tokens')->insert([
                 'email'      => $email,
                 'token'      => $hash,
                 'attempts'   => 0,
@@ -250,12 +261,13 @@ class CustomerAuthController extends Controller
                 'expires_at' => now()->addMinutes(15),
             ]);
 
-            // KIRIM EMAIL (boleh ->queue() jika queue sudah di-setup)
+            // KIRIM EMAIL
             Mail::to($email)->send(new CustomerPasswordResetCodeMail(
                 fullName: $cust->full_name ?? $email,
                 code: $plain,
                 minutes: 15
             ));
+            \Log::info('RESET_CODE', ['email'=>$email,'code'=>$plain]); // dev only
         }
 
         return response()->json([
@@ -271,54 +283,48 @@ class CustomerAuthController extends Controller
     {
         $data = $request->validate([
             'email'        => ['required','email'],
-            'token'        => ['required','string'], // kode 6 digit
+            'token'        => ['required','string','size:6'], // 6 digit
             'new_password' => ['required', Password::min(8)->letters()->numbers()],
         ]);
 
         $email = strtolower(trim($data['email']));
-        $rec = \DB::table('customer_password_reset_tokens')->where('email', $email)->first();
+        $rec = DB::table('customer_password_reset_tokens')->where('email',$email)->first();
 
-        // Validasi ada token
         if (!$rec) {
-            return response()->json(['success'=>false,'message'=>'Invalid or expired code'], 422);
-        }
-
-        // Cek expiry
-        if ($rec->expires_at && now()->greaterThan($rec->expires_at)) {
-            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
-            return response()->json(['success'=>false,'message'=>'Code expired'], 422);
-        }
-
-        // Brute-force guard
-        if (($rec->attempts ?? 0) >= 5) {
-            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
-            return response()->json(['success'=>false,'message'=>'Too many attempts'], 429);
-        }
-
-        // Cocokkan hash
-        $ok = hash_equals($rec->token, hash('sha256', $data['token']));
-        if (!$ok) {
-            \DB::table('customer_password_reset_tokens')
-                ->where('email',$email)
-                ->update(['attempts' => \DB::raw('attempts + 1')]);
             return response()->json(['success'=>false,'message'=>'Invalid code'], 422);
         }
 
-        // Update password
+        // expired?
+        if ($rec->expires_at && now()->greaterThan($rec->expires_at)) {
+            DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+            return response()->json(['success'=>false,'message'=>'Code expired'], 422);
+        }
+
+        // Terlalu banyak percobaan?
+        if (($rec->attempts ?? 0) >= 5) {
+            DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+            return response()->json(['success'=>false,'message'=>'Too many attempts. Request a new code'], 422);
+        }
+
+        // cocokkan SHA-256
+        if (!hash_equals($rec->token, hash('sha256', $data['token']))) {
+            DB::table('customer_password_reset_tokens')
+                ->where('email',$email)
+                ->update(['attempts' => DB::raw('attempts + 1')]);
+            return response()->json(['success'=>false,'message'=>'Invalid code'], 422);
+        }
+
         $cust = Customer::where('email', $email)->first();
         if (!$cust) {
-            // hapus token biar tidak nyangkut
-            \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
             return response()->json(['success'=>false,'message'=>'Account not found'], 422);
         }
 
         $cust->password = Hash::make($data['new_password']);
         $cust->save();
 
-        // Hapus token setelah sukses
-        \DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
+        DB::table('customer_password_reset_tokens')->where('email',$email)->delete();
 
-        return response()->json(['success'=>true,'message'=>'Password reset successful']);
+        return response()->json(['success'=>true,'message'=>'Password reset successfully']);
     }
 
     // OAuth Login With Google
