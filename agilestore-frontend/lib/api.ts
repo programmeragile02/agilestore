@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-const API_BASE = "http://localhost:8001/api/";
+const API_BASE = "http://localhost:8000/api/";
 /**
  * Customer AUTH.
  */
@@ -576,5 +576,13 @@ async function getSection<T = any>(
 }
 
 export const AgileStoreAPI = {
-  getSection,
+  async getSection<T = any>(key: string): Promise<T | null> {
+    const res = await fetch(`${API_BASE}agile-store/sections/${key}`, {
+      // agar SSR dan mudah revalidate (sesuaikan kebutuhanmu)
+      next: { revalidate: 60 },
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  },
 };
