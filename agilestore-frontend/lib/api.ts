@@ -551,6 +551,7 @@ export async function downloadInvoice(orderId: string): Promise<Blob> {
 }
 
 // Agile Store Setting
+// lib/api.ts (atau di file yang sama dengan cuplikanmu)
 export type AgileStoreSectionResp<T = any> = {
   id?: number;
   key: string;
@@ -559,30 +560,105 @@ export type AgileStoreSectionResp<T = any> = {
   order?: number;
   theme?: Record<string, any> | null;
   content?: T | null;
-  items?: any[]; // bentuk item tergantung section
+  items?: any[] | null;
 };
 
-async function getSection<T = any>(
-  key: string,
-  init?: RequestInit
-): Promise<AgileStoreSectionResp<T> | null> {
-  const res = await fetch(`${API_BASE}agile-store/sections/${key}`, {
-    cache: "no-store",
-    ...(init ?? {}),
-  });
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json?.data ?? null;
+// Helper kecil untuk aman pada berbagai bentuk payload
+function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
+  const root = resp?.data ?? resp ?? {};
+  const content =
+    root.content ?? root.payload?.content ?? root.data?.content ?? null;
+  const items = root.items ?? root.content?.items ?? root.data?.items ?? null;
+
+  return {
+    id: root.id,
+    key: root.key ?? key,
+    name: root.name ?? null,
+    enabled: root.enabled ?? true,
+    order: root.order,
+    theme: root.theme ?? null,
+    content,
+    items,
+  };
 }
 
 export const AgileStoreAPI = {
-  async getSection<T = any>(key: string): Promise<T | null> {
-    const res = await fetch(`${API_BASE}agile-store/sections/${key}`, {
-      // agar SSR dan mudah revalidate (sesuaikan kebutuhanmu)
-      next: { revalidate: 60 },
-      headers: { 'Accept': 'application/json' },
-    });
+  async getSection<T = any>(
+    key: string,
+    init?: RequestInit
+  ): Promise<AgileStoreSectionResp<T> | null> {
+    const res = await fetch(
+      `${API_BASE}agile-store/sections/${encodeURIComponent(key)}`,
+      {
+        cache: "no-store", // ⬅️ penting: jangan ke-cache
+        headers: { Accept: "application/json" },
+        ...(init ?? {}),
+      }
+    );
     if (!res.ok) return null;
-    return res.json();
+    const json = await res.json();
+    return unwrapSection(json, key);
   },
 };
+
+// ============ Search helper (client uses this) ============
+export type ProductLite = {
+  product_code: string;
+  product_name: string;
+  description?: string;
+};
+
+function normalizeProductsPayload(json: any): ProductLite[] {
+  const pick = (o: any) =>
+    ({
+      product_code: String(
+        o?.product_code ?? o?.code ?? o?.slug ?? o?.id ?? ""
+      ).trim(),
+      product_name: String(o?.product_name ?? o?.name ?? "").trim(),
+      description: o?.description ?? "",
+    } as ProductLite);
+
+  const cands: any[] = [
+    json?.data?.data,
+    json?.data?.items,
+    json?.data?.rows,
+    json?.data?.results,
+    json?.data?.products,
+    json?.data,
+    json?.items,
+    json?.rows,
+    json?.results,
+    json?.products,
+    Array.isArray(json) ? json : undefined,
+  ].filter(Boolean);
+
+  for (const c of cands) {
+    if (Array.isArray(c))
+      return c.map(pick).filter((p) => p.product_code || p.product_name);
+  }
+  return [];
+}
+
+/** Ambil list produk via rewrites (tanpa CORS) */
+export async function fetchAllProductsLite(): Promise<ProductLite[]> {
+  const base = API_BASE.replace(/\/$/, "");
+  const candidates = [
+    `${base}/products`,
+    `${base}/catalog/products`,
+    `${base}/v1/products`,
+  ];
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const list = normalizeProductsPayload(json);
+      if (list.length) return list;
+    } catch (e) {
+      // lanjut candidate berikutnya
+    }
+  }
+  console.warn("[fetchAllProductsLite] Tidak dapat menemukan list produk.");
+  return [];
+}
