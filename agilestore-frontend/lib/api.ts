@@ -159,17 +159,48 @@ export interface CustomerTokenResponse {
   access_token: string;
   expires_in: number; // seconds
   user: CustomerUser;
+  message?: string;
 }
 
-// Login With Google
-export async function loginWithGoogle(idToken: string) {
-  const { data } = await api.post("customer/oauth/google", {
-    id_token: idToken,
-  });
-  if (!data?.access_token)
-    throw new Error(data?.message || "Google login failed");
-  setCustomerToken(String(data.access_token)); // TOKEN_KEY = customer_access_token
-  return data as CustomerTokenResponse;
+// // Login With Google
+// export async function loginWithGoogle(idToken: string) {
+//   const { data } = await api.post("customer/oauth/google", {
+//     id_token: idToken,
+//   });
+//   if (!data?.access_token)
+//     throw new Error(data?.message || "Google login failed");
+//   setCustomerToken(String(data.access_token)); // TOKEN_KEY = customer_access_token
+//   return data as CustomerTokenResponse;
+// }
+// Tipe opsional biar enak dipakai
+
+// ✅ Versi robust + path pakai leading slash
+export async function loginWithGoogle(
+  idToken: string
+): Promise<CustomerTokenResponse> {
+  try {
+    // GANTI path ini agar SAMA dengan route backend-mu
+    // Jika route kamu: Route::post('auth/customer/google', ...);
+    const { data } = await api.post<CustomerTokenResponse>(
+      "customer/oauth/google", // <- sesuaikan dengan routes/api.php kamu
+      { id_token: idToken }
+    );
+
+    const token = data?.access_token;
+    if (!token) {
+      throw new Error(
+        data?.message || "Google login: no access_token in response"
+      );
+    }
+
+    setCustomerToken(String(token));
+    return data;
+  } catch (err) {
+    const ax = err as AxiosError<any>;
+    const msg =
+      ax.response?.data?.message || ax.message || "Google login failed";
+    throw new Error(msg);
+  }
 }
 
 // Register
