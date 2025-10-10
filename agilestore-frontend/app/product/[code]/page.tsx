@@ -1574,7 +1574,7 @@ function ProductTopBar({
         </nav>
 
         {/* Desktop actions */}
-        <div className="hidden sm:flex items-center gap-2">
+        {/* <div className="hidden sm:flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
             <Link href="#contact">Contact</Link>
           </Button>
@@ -1586,7 +1586,7 @@ function ProductTopBar({
           >
             <Link href="/member">Sign In</Link>
           </Button>
-        </div>
+        </div> */}
 
         {/* Mobile menu */}
         <div className="sm:hidden">

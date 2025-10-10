@@ -63,12 +63,12 @@ export function Header() {
 
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            <Button variant="ghost" size="sm">
+            {/* <Button variant="ghost" size="sm">
               <Search className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="sm">
               <ShoppingCart className="h-4 w-4" />
-            </Button>
+            </Button> */}
             <AuthButtons />
           </div>
 
@@ -123,21 +123,7 @@ export function Header() {
                 Contact
               </Link>
               <div className="flex items-center space-x-2 px-3 py-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 bg-transparent"
-                  asChild
-                >
-                  <Link href="/login">Login</Link>
-                </Button>
-                <Button
-                  size="sm"
-                  className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-500"
-                  asChild
-                >
-                  <Link href="/register">Register</Link>
-                </Button>
+                <AuthButtons />
               </div>
             </div>
           </div>
