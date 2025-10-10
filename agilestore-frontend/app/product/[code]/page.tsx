@@ -2102,11 +2102,12 @@ function ProductPricingStandalone({
 
   const handleStart = (c: (typeof cards)[number]) => {
     const href = buildCheckoutHref(c);
-    if (isLoggedIn()) router.push(href);
-    else {
-      setPendingHref(href);
-      setLoginOpen(true);
-    }
+    router.push(href)
+    // if (isLoggedIn()) router.push(href);
+    // else {
+    //   setPendingHref(href);
+    //   setLoginOpen(true);
+    // }
   };
 
   const goToLogin = () => {
