@@ -524,31 +524,46 @@ export async function fetchSubscriptions(params?: {
   if (data?.success === false)
     throw new Error(data?.message || "Failed to fetch subscriptions");
   // bentuk data: { success, data: { items, meta } }
+  console.log(data.data)
   return data.data as SubscriptionsResponse;
 }
 
 // ---------- ADD-ON CATALOG ----------
+// === ADD-ON CATALOG ===
+export type AddonChild = {
+  feature_code: string;
+  name: string;
+};
+
 export type AddonItem = {
   feature_code: string;
   name: string;
+  menu_parent_code: string | null; // parent selalu null di response ini
   price_addon: number;
-  included: boolean;
+  included: boolean; // true jika sudah termasuk paket aktif
+  purchased?: boolean;
+  children: AddonChild[]; // <-- PASTI ada di response
 };
 
 export type AddonCatalogResponse = {
   product_code: string;
-  package_code: string;
-  currency: string;
-  items: AddonItem[];
+  package_code: string | null;
+  currency: string; // "IDR"
+  items: AddonItem[]; // parent saja
 };
 
-// GET /api/catalog/addons?product_code=&package_code=
+/** GET /api/catalog/addons?product_code=&package_code= */
 export async function fetchAddonCatalog(
   productCode: string,
-  packageCode: string
+  packageCode?: string | null,
+  subscriptionInstanceId?: string | null
 ) {
   const { data } = await api.get("catalog/addons", {
-    params: { product_code: productCode, package_code: packageCode },
+    params: {
+      product_code: productCode,
+      package_code: packageCode ?? undefined,
+      subscription_instance_id: subscriptionInstanceId ?? undefined,
+    },
   });
   if (data?.success === false)
     throw new Error(data?.message || "Failed to fetch add-on catalog");

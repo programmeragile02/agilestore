@@ -128,39 +128,78 @@ class CatalogController extends Controller
         $data = $req->validate([
             'product_code' => 'required|string|exists:mst_products,product_code',
             'package_code' => 'nullable|string|exists:mst_product_packages,package_code',
+            'subscription_instance_id' => 'nullable|uuid',
         ]);
 
         $productCode = $data['product_code'];
         $packageCode = $data['package_code'] ?? null;
+        $instanceId  = $data['subscription_instance_id'] ?? null;
 
-        // 1) Ambil fitur aktif untuk product
-        $features = MstProductFeatures::query()
+        // 1) Semua fitur aktif
+        $features = \DB::table('mst_product_features')
             ->where('product_code', $productCode)
             ->where('is_active', 1)
-            ->get(['feature_code','name','price_addon']);
+            ->get(['feature_code','name','price_addon','menu_parent_code']);
 
-        // 2) Set included jika ada package_code
+        // 2) Included dari paket
         $includedSet = [];
         if ($packageCode) {
             $included = \DB::table('mst_package_matrix as m')
-                ->join('mst_product_packages as p', 'p.id', '=', 'm.package_id')
-                ->where('m.product_code', $productCode)
-                ->where('m.item_type', 'feature')
-                ->where('m.enabled', 1)
-                ->where('p.package_code', $packageCode)
-                ->pluck('m.item_id')              // berisi feature_code
-                ->all();
+                ->join('mst_product_packages as p','p.id','=','m.package_id')
+                ->where('m.product_code',$productCode)
+                ->where('m.item_type','feature')->where('m.enabled',1)
+                ->where('p.package_code',$packageCode)
+                ->pluck('m.item_id')->all();
             $includedSet = array_flip($included);
         }
 
-        $items = $features->map(function ($f) use ($includedSet) {
-            return [
-                'feature_code' => (string) $f->feature_code,
-                'name'         => (string) $f->name,
-                'price_addon'  => (int) round($f->price_addon ?? 0),
-                'included'     => isset($includedSet[$f->feature_code]),
+        // 3) Parents yang SUDAH DIBELI oleh instance ini (intent=addon, paid)
+        $purchasedSet = [];
+        if ($instanceId) {
+            $purchasedParents = \App\Models\Order::query()
+                ->where('product_code', $productCode)
+                ->where('intent', 'addon')
+                ->where('status', 'paid')
+                ->where('meta->subscription_instance_id', $instanceId)
+                ->get(['meta'])
+                ->flatMap(function ($o) {
+                    $m = $o->meta;
+                    if (is_string($m)) $m = json_decode($m, true) ?: [];
+                    $arr = data_get($m, 'features', []); // parent codes
+                    return is_array($arr) ? $arr : [];
+                })
+                ->unique()->values()->all();
+            $purchasedSet = array_flip($purchasedParents);
+        }
+
+        // 4) Susun tree: parent dengan anak2 (seperti respon yang sudah kamu tunjukkan)
+        $byParent = [];
+        foreach ($features as $f) {
+            $p = $f->menu_parent_code ?: null;
+            if ($p) {
+                $byParent[$p] = $byParent[$p] ?? [];
+                $byParent[$p][] = [
+                    'feature_code' => (string)$f->feature_code,
+                    'name'         => (string)$f->name,
+                ];
+            }
+        }
+
+        $items = [];
+        foreach ($features as $f) {
+            $isParent = empty($f->menu_parent_code);
+            if (!$isParent) continue; // kirim hanya parent
+            $code = (string)$f->feature_code;
+            $items[] = [
+                'feature_code'     => $code,
+                'name'             => (string)$f->name,
+                'menu_parent_code' => null,
+                'price_addon'      => (int)round($f->price_addon ?? 0),
+                'included'         => isset($includedSet[$code]),
+                'purchased'        => isset($purchasedSet[$code]),
+                'children'         => array_values($byParent[$code] ?? []),
             ];
-        })->values();
+        }
 
         return response()->json([
             'success' => true,

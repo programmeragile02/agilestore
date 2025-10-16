@@ -50,6 +50,7 @@ import {
   createUpgradeOrder,
   fetchSubscriptions,
   SubscriptionsItem,
+  downloadInvoice,
 } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "@/hooks/use-toast";
@@ -173,7 +174,7 @@ export default function MyAccountPage() {
   const [addonCtx, setAddonCtx] = useState<{
     productCode: string;
     packageCode: string;
-    subscriptionInstanceId?: string | null;
+    subscriptionInstanceId: string;
   } | null>(null);
 
   // forgot & reset password
@@ -181,6 +182,9 @@ export default function MyAccountPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [securityBusy, setSecurityBusy] = useState(false);
   const [debugToken, setDebugToken] = useState<string | null>(null); // hanya untuk dev (BE kirim debug_plain_token)
+
+  // donwload invoice
+  const [downloadingInvId, setDownloadingInvId] = useState<string | null>(null);
 
   // fetch user
   useEffect(() => {
@@ -568,7 +572,7 @@ export default function MyAccountPage() {
     setAddonCtx({
       productCode: sub.product.code,
       packageCode: sub.package.code,
-      subscriptionInstanceId: sub.meta?.subscription_instance_id || undefined, // kalau BE isi meta ini
+      subscriptionInstanceId: sub.subscription_id, // kalau BE isi meta ini
     });
     setAddonOpen(true);
     setRenewOpen(false);
@@ -729,6 +733,48 @@ export default function MyAccountPage() {
       setSecurityBusy(false);
     }
   };
+
+  // donlod invoice
+  async function handleInvoiceDownload(
+    orderId?: string,
+    midtransOrderId?: string
+  ) {
+    try {
+      if (!orderId) {
+        toast({
+          variant: "destructive",
+          title: "Tidak bisa unduh",
+          description: "Order ID tidak ditemukan pada invoice ini.",
+        });
+        return;
+      }
+      setDownloadingInvId(orderId);
+
+      // panggil API yang sudah kamu punya (sama seperti di halaman Order Detail)
+      const blob = await downloadInvoice(orderId);
+
+      const filename = `invoice-${(midtransOrderId || orderId)
+        .toString()
+        .replace(/\s+/g, "")}.pdf`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal mengunduh invoice",
+        description: String(e?.message ?? "Unknown error"),
+      });
+    } finally {
+      setDownloadingInvId(null);
+    }
+  }
 
   // ===== Loading skeleton untuk seluruh halaman =====
   if (loadingUser) {
@@ -1165,8 +1211,29 @@ export default function MyAccountPage() {
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             {getPaymentStatusBadge(invoice.status)}
-                            <Button variant="ghost" size="sm">
-                              <Download className="h-4 w-4" />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                handleInvoiceDownload(
+                                  invoice.order_id,
+                                  invoice.midtrans_order_id
+                                )
+                              }
+                              disabled={downloadingInvId === invoice.order_id || invoice.status !== "paid"}
+                              aria-busy={downloadingInvId === invoice.order_id}
+                              aria-label={`Download invoice ${
+                                invoice.midtrans_order_id || invoice.order_id
+                              }`}
+                              title="Download Invoice (PDF)"
+                            >
+                              {downloadingInvId === invoice.order_id ? (
+                                <span className="inline-flex items-center">
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                </span>
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </div>
@@ -1213,8 +1280,8 @@ export default function MyAccountPage() {
                       className="border-0 shadow-md"
                     >
                       <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="w-2xl">
                             <h3 className="text-lg font-semibold text-slate-900">
                               {productLabel}
                             </h3>
@@ -1227,7 +1294,7 @@ export default function MyAccountPage() {
                                 : `Expired: ${formatDate(p.end_date)}`}
                             </p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button
                               variant="outline"
                               onClick={() => openAddonFor(p)}

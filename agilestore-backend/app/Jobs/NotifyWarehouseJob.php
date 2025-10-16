@@ -197,14 +197,24 @@ class NotifyWarehouseJob implements ShouldQueue
         ];
 
         if ($order->intent === 'addon') {
-            $lines = collect($order->meta['lines'] ?? [])
-                ->map(fn($l)=>[
-                    'feature_code'=>(string)($l['feature_code'] ?? ''),
-                    'name'        =>(string)($l['name'] ?? ($l['feature_code'] ?? '')),
-                    'price'       =>(int)($l['amount'] ?? 0),
-                ])->filter(fn($x)=>$x['feature_code']!=='')->values()->all();
+            // parents = item berbayar (untuk tabel subscription_addons)
+            $parents = collect($order->meta['lines'] ?? [])
+                ->map(fn($l) => [
+                    'feature_code' => (string)($l['feature_code'] ?? ''),
+                    'name'         => (string)($l['name'] ?? ($l['feature_code'] ?? '')),
+                    'price'        => (int)($l['amount'] ?? 0),
+                ])
+                ->filter(fn($x) => $x['feature_code'] !== '')
+                ->values()
+                ->all();
 
-            $payload['addons']   = ['features'=>$lines];
+            // grant = parent + children, untuk overrides
+            $grant = array_values($order->meta['grant_features'] ?? []);
+
+            $payload['addons'] = [
+                'parents' => $parents,
+                'grant'   => $grant,
+            ];
             $payload['start_date'] = null;
             $payload['end_date']   = null;
         }

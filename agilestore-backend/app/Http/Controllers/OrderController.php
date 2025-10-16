@@ -178,54 +178,53 @@ class OrderController extends Controller
 
         $auth = auth('customer-api')->user(); if (!$auth) abort(401);
 
-        // subscription aktif untuk dapat paket
+        // cek subscription aktif utk ambil paket
         $sub = Subscription::query()
             ->where('customer_id',$auth->id)
             ->where('product_code',$data['product_code'])
             ->where('is_active',true)
             ->orderByDesc('end_date')->orderByDesc('created_at')
             ->first();
-
         if (!$sub) throw ValidationException::withMessages([
             'product_code'=>['Anda belum punya langganan aktif untuk produk ini.']
         ]);
 
-        // instance id (bisa dari FE, kalau tidak — ambil dari order aktif)
         $instanceId = $data['subscription_instance_id']
             ?? $this->resolveInstanceIdForCustomerProduct((string)$auth->id, $data['product_code']);
         if (!$instanceId) throw ValidationException::withMessages([
             'subscription_instance_id'=>['Tidak bisa menemukan instance aktif untuk produk ini.']
         ]);
 
-        // fitur yang sudah pernah dibeli untuk instance ini
-        $alreadyBought = Order::query()
+        // Ambil PARENT yang sudah dibeli sebelumnya (pakai meta.features = parent codes)
+        $boughtParents = Order::query()
             ->where('customer_id',$auth->id)
             ->where('product_code',$data['product_code'])
             ->where('intent','addon')->where('status','paid')
             ->where('meta->subscription_instance_id',$instanceId)
-            ->pluck('meta->features')           // ← langsung ambil path JSON
-            ->filter()                          // buang null
-            ->flatMap(fn($arr) => (array)$arr)  // pastikan array
-            ->unique()->flip();
+            ->get(['meta'])
+            ->flatMap(function (Order $o) {
+                $m = $o->meta;
+                if (is_string($m)) $m = json_decode($m, true) ?: [];
+                $arr = data_get($m, 'features', []);
+                return is_array($arr) ? $arr : [];
+            })
+            ->unique()->values()->all();
 
-        $wanted = array_values(array_filter(
-            $data['features'],
-            fn($c) => !isset($alreadyBought[$c])
-        ));
+        // Resolve hierarki
+        $res = $svc->resolvePayableHierarchical(
+            productCode: $data['product_code'],
+            packageCode: $sub->current_package_code,
+            wanted:      $data['features'],
+            alreadyBoughtParentCodes: $boughtParents
+        );
 
-        if (!$wanted) throw ValidationException::withMessages([
-            'features'=>['Semua fitur yang dipilih sudah pernah Anda beli untuk instance ini.']
-        ]);
+        if (empty($res['lines'])) {
+            throw ValidationException::withMessages([
+                'features'=>['Semua pilihan sudah termasuk paket atau sudah Anda beli.']
+            ]);
+        }
 
-        // filter yang included paket; hitung total flat
-        $payable = $svc->resolvePayable($data['product_code'], $sub->current_package_code, $wanted);
-        if (!$payable) throw ValidationException::withMessages([
-            'features'=>['Semua fitur yang dipilih sudah termasuk paket atau tidak valid.']
-        ]);
-
-        $price = $svc->computeTotal($payable); // ['total','lines']
-
-        // buat order intent=addon
+        // Buat order
         $order = new Order();
         $order->fill([
             'customer_id'    => (string)$auth->id,
@@ -238,10 +237,10 @@ class OrderController extends Controller
             'package_code'   => $sub->current_package_code,
             'package_name'   => $sub->current_package_name,
 
-            'duration_code'  => null,'duration_name'=> null,
-            'price'          => $price['total'],
+            'duration_code'  => null, 'duration_name'=> null,
+            'price'          => $res['total'],
             'discount'       => 0,
-            'total'          => $price['total'],
+            'total'          => $res['total'],
             'currency'       => 'IDR',
 
             'start_date'     => null,
@@ -252,22 +251,30 @@ class OrderController extends Controller
         ]);
         $order->meta = array_merge($order->meta ?? [], [
             'subscription_instance_id' => $instanceId,
-            'features' => array_column($payable,'feature_code'),
-            'lines'    => $price['lines'],
+            'features'         => $res['payable_parents'], // SIMPAN parent yg dibeli
+            'grant_features'   => $res['grant_features'],  // parent+children (untuk warehouse)
+            'lines'            => $res['lines'],           // untuk kurasi Midtrans
         ]);
         $order->save();
 
         // Midtrans
-        $midId  = $this->nextMidtransOrderId('ORD');
+        $midId = $this->nextMidtransOrderId('ORD');
         $payload = [
             'transaction_details' => ['order_id'=>$midId,'gross_amount'=>(int)$order->total],
             'customer_details'    => ['first_name'=>$order->customer_name,'email'=>$order->customer_email,'phone'=>$order->customer_phone],
-            'item_details'        => $svc->midtransItems($price['lines']),
+            'item_details'        => $svc->midtransItems($res['lines']),  // HANYA parent
             'callbacks'           => [
                 'finish'=>rtrim(env('FRONTEND_URL','http://localhost:3000'),'/')."/orders/{$order->id}?intent=addon&status=success",
                 'error' =>rtrim(env('FRONTEND_URL','http://localhost:3000'),'/')."/orders/{$order->id}?intent=addon&status=error",
             ],
         ];
+
+        \Log::info('ADDON ORDER', [
+            'order_id' => (string)$order->id,
+            'parents'  => $res['payable_parents'],
+            'grant'    => $res['grant_features'],
+            'total'    => $res['total'],
+        ]);
         $snap = $midtrans->createSnapToken($payload);
         $order->midtrans_order_id = $midId;
         $order->snap_token        = $snap;
