@@ -105,7 +105,7 @@ export default async function PricingPage({
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const productCode = (searchParams?.product as string) || "TIRTABENING";
+  const productCode = (searchParams?.product as string) || "NATABANYU";
   const data = (await fetchProductDetail(productCode)) as ProductDetail;
 
   const monthlyDurationId = findMonthlyDurationId(data.durations);

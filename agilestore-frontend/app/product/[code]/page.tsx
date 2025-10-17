@@ -68,7 +68,7 @@
 // };
 
 // type FeatureRow = {
-//   id: string; // "TIRTABENING:1"
+//   id: string; // "NATABANYU:1"
 //   product_code: string;
 //   item_type: "FEATURE" | "SUBFEATURE";
 //   feature_code: string; // mis. "kirim.notif.whatsapp"

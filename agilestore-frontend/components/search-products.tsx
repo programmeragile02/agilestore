@@ -13,7 +13,7 @@
 // }
 
 // export function SearchProducts({
-//   placeholder = "Cari produk… (cth: TIRTABENING / Tirta Bening)",
+//   placeholder = "Cari produk… (cth: NATABANYU / Nata Banyu)",
 //   className,
 // }: {
 //   placeholder?: string;
@@ -141,7 +141,7 @@ type Props = {
 };
 
 export function SearchProducts({
-  placeholder = "Cari produk… (cth: TIRTABENING / Tirta Bening)",
+  placeholder = "Cari produk… (cth: NATABANYU / Nata Banyu)",
   className,
   useRemote = false,
   defaultQuery = "",

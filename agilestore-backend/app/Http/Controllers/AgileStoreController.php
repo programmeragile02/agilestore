@@ -87,7 +87,7 @@ class AgileStoreController extends Controller
      *       "description": "...",
      *       "cta_label": "...",
      *       "order": 1,
-     *       "product_code": "TIRTABENING",
+     *       "product_code": "NATABANYU",
      *       "package_id": null,
      *       "duration_id": null,
      *       "price_monthly": 0,
