@@ -53,6 +53,7 @@ import Providers from "./providers";
 import { Toaster } from "@/components/ui/toaster";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import AutoTranslateClient from "@/components/AutoTranslateClient";
+import GooglePageTranslate from "@/components/GooglePageTranslate";
 
 const montserrat = Montserrat({
   subsets: ["latin"],

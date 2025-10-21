@@ -1,82 +1,115 @@
 // lib/auto-translate.ts
-type Target = "id" | "en";
-type Source = "id" | "en";
+export type Target = "id" | "en";
+export type Source = "id" | "en";
+type Format = "text" | "html";
+
+type CacheLayer = {
+  get(key: string): string | null;
+  set(key: string, val: string): void;
+};
 
 const mem = new Map<string, string>();
-const keyOf = (s: string, src: Source, tgt: Target, fmt = "text") =>
-  `lt:${fmt}:${src}->${tgt}:${s}`;
 
-export async function translateBatch(
+const ls: CacheLayer = {
+  get(key) {
+    try {
+      if (typeof window === "undefined") return null;
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key, val) {
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem(key, val);
+    } catch {}
+  },
+};
+
+function djb2(str: string) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (h * 33) ^ str.charCodeAt(i);
+  return (h >>> 0).toString(36);
+}
+
+const CACHE_VERSION = "v2";
+const keyOf = (s: string, src: Source, tgt: Target, fmt: Format) =>
+  `lt:${CACHE_VERSION}:${fmt}:${src}->${tgt}:${djb2(s)}`;
+
+async function callTranslateAPI(
   texts: string[],
   target: Target,
-  format: "text" | "html" = "text",
+  source?: Source,
+  format: Format = "text"
+): Promise<string[]> {
+  const res = await fetch("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ texts, target, source, format }),
+  });
+  if (!res.ok) throw new Error("translate failed");
+  const json = await res.json().catch(() => null);
+  const outs = json?.data;
+  if (!Array.isArray(outs) || outs.length !== texts.length) {
+    // mismatch → kembalikan input apa adanya agar aman
+    return texts.slice();
+  }
+  return outs as string[];
+}
+
+export async function translateBatchCached(
+  texts: string[],
+  target: Target,
+  format: Format = "text",
   source: Source = "id"
 ) {
-  const trimmed = texts.map((s) => (s ?? "").toString());
-  const unique = Array.from(
-    new Set(trimmed.map((s) => s.trim()).filter(Boolean))
-  );
+  const normalized = texts.map((s) => (s ?? "").toString());
+  const unique = Array.from(new Set(normalized.filter(Boolean)));
 
   const result = new Map<string, string>();
   const need: string[] = [];
 
   for (const s of unique) {
     const k = keyOf(s, source, target, format);
-    const inMem = mem.get(k);
-    if (inMem) {
-      result.set(s, inMem);
+    const vMem = mem.get(k);
+    if (vMem) {
+      result.set(s, vMem);
       continue;
     }
-    const inLS = typeof window !== "undefined" ? localStorage.getItem(k) : null;
-    if (inLS) {
-      result.set(s, inLS);
-      mem.set(k, inLS);
+    const vLS = ls.get(k);
+    if (vLS) {
+      result.set(s, vLS);
+      mem.set(k, vLS);
       continue;
     }
     need.push(s);
   }
 
   if (need.length) {
-    const chunkSize = 100;
-    for (let i = 0; i < need.length; i += chunkSize) {
-      const chunk = need.slice(i, i + chunkSize);
-
-      // === panggil API (pakai multi texts sekaligus biar hemat) ===
-      let outs: string[] | null = null;
+    const CHUNK = 20; // lebih hemat kuota; granular saat fallback
+    for (let i = 0; i < need.length; i += CHUNK) {
+      const part = need.slice(i, i + CHUNK);
+      let outs: string[] = [];
       try {
-        const res = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texts: chunk, target, source, format }),
-        });
-        const json = await res.json().catch(() => null);
-        if (res.ok && json?.ok && Array.isArray(json.data)) {
-          outs = json.data as string[];
-        }
-      } catch (e) {
-        // biarkan outs tetap null
+        outs = await callTranslateAPI(part, target, source, format);
+      } catch {
+        outs = part.slice(); // jangan cache jika gagal
       }
 
-      // === mapping hasil ===
-      chunk.forEach((orig, idx) => {
-        const k = keyOf(orig, source, target, format);
-        const translated = outs?.[idx];
-
-        // Jika sukses -> simpan ke mem & localStorage
-        if (
-          typeof translated === "string" &&
-          translated.trim().length > 0 &&
-          translated !== orig
-        ) {
-          result.set(orig, translated);
-          mem.set(k, translated);
-          if (typeof window !== "undefined")
-            localStorage.setItem(k, translated);
+      part.forEach((orig, idx) => {
+        const tr = outs[idx];
+        if (typeof tr === "string" && tr.trim() && tr !== orig) {
+          result.set(orig, tr);
+          const k = keyOf(orig, source, target, format);
+          mem.set(k, tr);
+          ls.set(k, tr);
         } else {
-          // Jika gagal -> JANGAN cache original (biar bisa coba lagi nanti)
           result.set(orig, orig);
         }
       });
+
+      if (need.length > CHUNK) await new Promise((s) => setTimeout(s, 35));
     }
   }
 

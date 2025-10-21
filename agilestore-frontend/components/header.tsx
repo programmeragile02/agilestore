@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, Search, ShoppingCart } from "lucide-react";
 import AuthButtons from "./AuthButtons";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import LanguageToggle from "@/components/LanguageToogle";
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -58,7 +59,8 @@ export function Header() {
             >
               Contact
             </Link>
-            <LanguageSwitcher />
+            {/* <LanguageSwitcher /> */}
+            <LanguageToggle className="ml-2" />
           </nav>
 
           {/* Desktop Actions */}
