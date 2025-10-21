@@ -1,36 +1,6 @@
-// import { Header } from "@/components/header";
-// import { HeroSection } from "@/components/hero-section";
-// import { TrustedBySection } from "@/components/trusted-by-section";
-// import { FeaturedProductsSection } from "@/components/featured-products-section";
-// import { BenefitsSection } from "@/components/benefits-section";
-// import { HowItWorksSection } from "@/components/how-it-works-section";
-// import { PricingHighlightSection } from "@/components/pricing-highlight-section";
-// import { TestimonialsSection } from "@/components/testimonials-section";
-// import { FinalCTASection } from "@/components/final-cta-section";
-// import { Footer } from "@/components/footer";
-
-// export default function HomePage() {
-//   return (
-//     <div className="min-h-screen bg-slate-50">
-//       <Header />
-//       <main>
-//         <HeroSection />
-//         <TrustedBySection />
-//         <FeaturedProductsSection />
-//         <BenefitsSection />
-//         <HowItWorksSection />
-//         <PricingHighlightSection />
-//         <TestimonialsSection />
-//         <FinalCTASection />
-//       </main>
-//       <Footer />
-//     </div>
-//   );
-// }
-
-// app/page.tsx (atau path home kamu)
 // app/page.tsx
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
@@ -54,6 +24,63 @@ import {
 import { AgileStoreAPI } from "@/lib/api";
 
 /* =========================
+   Locale & Currency Helpers
+========================= */
+
+type Lang = "id" | "en";
+
+/** Normalisasi angka harga ke number (terima number / "Rp 100.000" / "100,000" / "$79") */
+function normalizePriceToNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const digits = v.replace(/[^\d]/g, "");
+    if (!digits) return null;
+    return Number(digits);
+  }
+  return null;
+}
+
+/**
+ * Pilih & format harga sesuai locale.
+ * Asumsi: nilai sumber (plan.price/*) adalah **IDR**.
+ * - locale 'id'  → tampil Rp ... /bulan
+ * - locale 'en'  → konversi ke USD pakai usdRate (IDR per 1 USD) → $ ... /month
+ */
+function resolvePrice(plan: any, locale: Lang, usdRate: number) {
+  const p = plan?.price;
+
+  let rawPrice: any =
+    (p && (typeof p === "object" ? p.monthly ?? p.yearly : p)) ??
+    plan?.priceMonthly ??
+    plan?.price_monthly ??
+    plan?.priceYearly ??
+    plan?.price_yearly ??
+    null;
+
+  // Normalisasi ke number → dianggap IDR
+  let amountIdr = normalizePriceToNumber(rawPrice);
+  if (amountIdr == null) amountIdr = 0;
+
+  if (locale === "id") {
+    const priceText = new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0,
+    }).format(amountIdr); // → "Rp100.000"
+    return { priceText, periodText: "/bulan" };
+  } else {
+    const rate = usdRate > 0 ? usdRate : 15500;
+    const amountUsd = amountIdr / rate;
+    const priceText = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(amountUsd); // → "$6"
+    return { priceText, periodText: "/month" };
+  }
+}
+
+/* =========================
    Fallbacks (UI tidak diubah)
 ========================= */
 
@@ -73,7 +100,7 @@ const FALLBACK_HERO = {
   ui: { gradientFrom: "blue-600", gradientTo: "violet-600" },
 };
 
-// TRUSTED BY (kita pakai untuk grid kecil testimoni singkat)
+// TRUSTED BY
 const FALLBACK_TRUSTED = {
   headline: "Trusted by 100+ businesses and organizations",
   items: [
@@ -322,49 +349,6 @@ function IconByName(
   return (name && ICONS[name]) || fallback || Search;
 }
 
-// Pilih price yang bisa dirender (prioritas monthly)
-function resolvePrice(plan: any) {
-  // Bentuk-bentuk yang didukung:
-  // - plan.price: "$79" | 79
-  // - plan.price: { monthly: "$79" | 79, yearly: "$790" | 790 }
-  // - plan.priceMonthly / plan.priceYearly (legacy)
-  const p = plan?.price;
-
-  let priceVal: any =
-    (p && (typeof p === "object" ? p.monthly ?? p.yearly : p)) ??
-    plan?.priceMonthly ??
-    plan?.price_monthly ??
-    plan?.priceYearly ??
-    plan?.price_yearly ??
-    null;
-
-  // format ke string
-  if (priceVal == null) priceVal = "$0";
-  if (typeof priceVal === "number") {
-    priceVal = priceVal.toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-    // optional: tambahkan simbol $
-    priceVal = `$${priceVal}`;
-  } else if (typeof priceVal !== "string") {
-    priceVal = String(priceVal);
-  }
-
-  // tentukan period
-  const period =
-    plan?.period ??
-    (typeof p === "object"
-      ? p.monthly != null
-        ? "/month"
-        : p.yearly != null
-        ? "/year"
-        : "/month"
-      : "/month");
-
-  return { priceText: priceVal, periodText: period };
-}
-
 /* =========================
    Server-side fetch ke Agile Store
    (keys: hero, why, how, products, pricing, cta, testimonials)
@@ -425,16 +409,13 @@ async function fetchAllSections() {
     bullets: ctaSec?.content?.bullets ?? FALLBACK_FINAL_CTA.bullets,
   };
 
-  // === ⬇️ Perbaikan utama: ambil testimonials dari SECTION ITEMS jika ada
-  // === Testimonials: normalisasi fleksibel dari content.items ATAU section.items
+  // Testimonials: normalisasi fleksibel
   const testiItemsFromItems = Array.isArray(testiSec?.items)
     ? testiSec!.items.map((it: any) => {
         const ex = it?.extras ?? {};
         return {
-          // nama & role: ambil dari title/subtitle atau extras.person_name / extras.person_role
           name: it.title ?? ex.person_name ?? ex.name ?? it.name ?? "",
           role: it.subtitle ?? ex.person_role ?? ex.role ?? "",
-          // isi quote: prioritas extras.quote, lalu content/description
           content: ex.quote ?? it.content ?? it.description ?? ex.content ?? "",
           rating: Number(ex.rating ?? it.rating ?? 5),
           avatar: ex.avatar ?? ex.photo ?? it.avatar ?? "",
@@ -442,7 +423,6 @@ async function fetchAllSections() {
       })
     : null;
 
-  // kalau content.items ada tapi formatnya {name, role, quote}, ubah ke {name, role, content}
   const rawFromContent = Array.isArray(testiSec?.content?.items)
     ? testiSec!.content!.items
     : null;
@@ -468,7 +448,6 @@ async function fetchAllSections() {
       FALLBACK_TESTIMONIALS.items,
   };
 
-  // Grid kecil “Trusted by” ambil 3 item pertama dari testimonials
   const trusted = {
     headline: "Trusted by our customers",
     items: (testimonials.items || []).slice(0, 3).map((t: any) => ({
@@ -495,6 +474,15 @@ async function fetchAllSections() {
    PAGE (Server Component)
 ========================= */
 export default async function HomePage() {
+  // ✅ baca cookie secara async, sekali di sini
+  const cookieStore = await cookies();
+  const localeCookie = cookieStore.get("locale")?.value;
+  const locale: Lang = localeCookie === "en" ? "en" : "id";
+
+  const usdRateRaw = Number(cookieStore.get("usd_idr")?.value);
+  const usdRate =
+    Number.isFinite(usdRateRaw) && usdRateRaw > 0 ? usdRateRaw : 15500;
+
   const data = await fetchAllSections();
 
   return (
@@ -797,7 +785,11 @@ export default async function HomePage() {
                         {plan.name}
                       </h3>
                       {(() => {
-                        const { priceText, periodText } = resolvePrice(plan);
+                        const { priceText, periodText } = resolvePrice(
+                          plan,
+                          locale,
+                          usdRate
+                        );
                         return (
                           <div className="flex items-baseline justify-center gap-1 mt-4">
                             <span className="text-4xl font-bold text-slate-900">
@@ -824,18 +816,19 @@ export default async function HomePage() {
                           )
                         )}
                       </ul>
-
-                      <Button
-                        className={`w-full ${
-                          plan.popular
-                            ? "bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90"
-                            : "bg-slate-900 hover:bg-slate-800"
-                        } text-white`}
-                        size="lg"
-                      >
-                        {plan.cta?.label ?? "Start Now"}
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
+                      <Link href="/checkout">
+                        <Button
+                          className={`w-full ${
+                            plan.popular
+                              ? "bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90"
+                              : "bg-slate-900 hover:bg-slate-800"
+                          } text-white`}
+                          size="lg"
+                        >
+                          {plan.cta?.label ?? "Start Now"}
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 )
@@ -868,7 +861,6 @@ export default async function HomePage() {
               </p>
             </div>
 
-            {/* Render satu item utama (server) */}
             <div className="max-w-4xl mx-auto">
               <div className="relative">
                 <div className="border-border shadow-lg rounded-lg">
@@ -951,7 +943,6 @@ export default async function HomePage() {
 
               <h2
                 className="font-sans font-bold text-3xl sm:text-4xl lg:text-5xl text-white mb-6 leading-tight"
-                // kalau mau ambil dari DB, isi content.titleHTML di key "cta"
                 dangerouslySetInnerHTML={{
                   __html:
                     typeof data.finalCta.titleHTML === "string"
