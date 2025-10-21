@@ -1183,6 +1183,7 @@
 // }
 
 // app/checkout/page.tsx
+export const dynamic = "force-dynamic";
 import { Suspense } from "react";
 import Header from "@/components/header";       // header kamu client — aman di-render dari server
 import Footer from "@/components/footer";       // footer server (wrapper async yg sudah kita buat)

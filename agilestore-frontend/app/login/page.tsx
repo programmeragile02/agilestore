@@ -304,8 +304,10 @@
 
 "use client";
 
-import React, { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import type React from "react";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -334,7 +336,6 @@ import { GoogleLogin } from "@react-oauth/google";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -367,9 +368,8 @@ export default function LoginPage() {
       // set cookie flag untuk middleware (/checkout)
       setAuthCookie(remember);
 
-      // Redirect setelah login — cek searchParams aman
-      const next = searchParams ? searchParams.get("next") : null;
-      router.push(next || "/");
+      // Redirect setelah login
+      router.push("/");
       toast({ title: "Login Success" });
     } catch (err: any) {
       setErrorMsg("Login failed. Please check your credentials.");
@@ -391,8 +391,7 @@ export default function LoginPage() {
 
       setAuthCookie(remember);
 
-      const next = searchParams ? searchParams.get("next") : null;
-      router.push(next || "/");
+      router.push("/");
       toast({ title: "Signed in with Google" });
     } catch (e: any) {
       toast({

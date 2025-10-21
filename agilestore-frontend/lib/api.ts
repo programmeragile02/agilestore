@@ -524,7 +524,7 @@ export async function fetchSubscriptions(params?: {
   if (data?.success === false)
     throw new Error(data?.message || "Failed to fetch subscriptions");
   // bentuk data: { success, data: { items, meta } }
-  console.log(data.data)
+  console.log(data.data);
   return data.data as SubscriptionsResponse;
 }
 
@@ -633,6 +633,15 @@ export const AgileStoreAPI = {
     key: string,
     init?: RequestInit
   ): Promise<AgileStoreSectionResp<T> | null> {
+    // ⛔ Lindungi agar tidak memanggil dirinya sendiri
+    if (typeof window === "undefined" && key === "footer") {
+      const stack = new Error().stack || "";
+      if (stack.includes("footer")) {
+        console.warn("[AgileStoreAPI] Skipping self-fetch for footer");
+        return null;
+      }
+    }
+
     const res = await fetch(
       `${API_BASE}agile-store/sections/${encodeURIComponent(key)}`,
       {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -19,8 +19,12 @@ import Link from "next/link";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const sp = useSearchParams();
-  const email = (sp.get("email") || "").trim();
+  const [email, setEmail] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setEmail((params.get("email") || "").trim());
+  }, []);
 
   // OTP
   const [boxes, setBoxes] = useState(["", "", "", "", "", ""]);
