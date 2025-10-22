@@ -91,6 +91,19 @@ class OrderController extends Controller
             ->where(fn($q)=>$q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
             ->orderByDesc('end_date')->first();
 
+        if ($intent === 'purchase' && $lastActiveForProduct) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda sudah memiliki langganan aktif untuk produk ini.',
+                'data' => [
+                    'existing_order_id' => (string)$lastActiveForProduct->id,
+                    'package_code' => $lastActiveForProduct->package_code,
+                    'package_name' => $lastActiveForProduct->package_name,
+                    'end_date' => optional($lastActiveForProduct->end_date)->toDateString(),
+                ],
+            ], 422);
+        }
+
         ['start_date'=>$start,'end_date'=>$end] = $period->compute($intent,$baseOrder,$duration);
 
         $priceInfo = $pricing->resolvePrice($data['product_code'],$data['package_code'],$data['duration_code'],$intent,$baseOrder?->id);
@@ -534,5 +547,37 @@ class OrderController extends Controller
             return $n;
         });
         return "{$prefix}-{$today}-".str_pad((string)$next,6,'0',STR_PAD_LEFT);
+    }
+
+    // check produk
+    public function checkProduct(Request $req)
+    {
+        $data = $req->validate([
+            'product_code' => 'required|string|exists:mst_products,product_code',
+        ]);
+
+        $auth = auth('customer-api')->user();
+        if (!$auth) abort(401, 'Unauthorized');
+
+        $today = now()->toDateString();
+        $last = Order::query()
+            ->where('customer_id', $auth->id)
+            ->where('product_code', $data['product_code'])
+            ->where('status', 'paid')
+            ->where('is_active', true)
+            ->where(fn($q) => $q->whereNull('end_date')->orWhereDate('end_date', '>=', $today))
+            ->orderByDesc('end_date')
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'has_active' => (bool)$last,
+                'existing_order_id' => $last ? (string)$last->id : null,
+                'package_code' => $last ? $last->package_code : null,
+                'package_name' => $last ? $last->package_name : null,
+                'end_date' => $last ? optional($last->end_date)->toDateString() : null,
+            ],
+        ]);
     }
 }

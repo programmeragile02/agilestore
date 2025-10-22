@@ -56,6 +56,8 @@ Route::prefix('customer')->group(function () {
 });
 
 Route::middleware('auth:customer-api')->group(function () {
+    // check produk agar tidak order lebih dari 1 (produk yang sama)
+    Route::get('/orders/check-product', [OrderController::class, 'checkProduct']);
     // Order baru (Purchase)
     Route::post('/orders', [OrderController::class, 'purchase']);
     // Renewal (Perpanjangan durasi)

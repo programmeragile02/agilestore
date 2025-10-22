@@ -366,6 +366,13 @@ export type CreateOrderResponse = {
   status: string;
 };
 
+// check product
+export async function checkProduct(product_code: string) {
+  const { data } = await api.get("orders/check-product", { params: { product_code } });
+  if (data?.success === false) throw new Error(data?.message || "Failed to check product");
+  return data.data; // { has_active, existing_order_id, package_name, end_date }
+}
+
 // New order (Purchase)
 export async function createPurchaseOrder(payload: CreatePurchasePayload) {
   const { data } = await api.post("orders", payload);
