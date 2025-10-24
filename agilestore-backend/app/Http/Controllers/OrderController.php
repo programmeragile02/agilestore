@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\CustomerPasswordResetCodeMail;
+use App\Models\Customer;
 use App\Models\MstDuration;
 use App\Models\MstProduct;
 use App\Models\MstProductPackage;
@@ -13,6 +15,8 @@ use App\Services\PeriodService;
 use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -36,17 +40,179 @@ class OrderController extends Controller
         return $this->createOrder($req, $pricing, $midtrans, $period, 'upgrade');
     }
 
+    // private function createOrder(Request $req, PricingService $pricing, MidtransService $midtrans, PeriodService $period, string $intent)
+    // {
+    //     $data = $req->validate([
+    //         'product_code'   => 'required|string|exists:mst_products,product_code',
+    //         'package_code'   => 'required|string|exists:mst_product_packages,package_code',
+    //         'duration_code'  => 'required|string|exists:mst_durations,code',
+    //         'base_order_id'  => 'nullable|uuid|exists:orders,id',
+    //     ]);
+
+    //     $auth = auth('customer-api')->user(); if (!$auth) abort(401,'Unauthorized');
+
+    //     $baseOrder = null;
+    //     if (in_array($intent, ['renew','upgrade'])) {
+    //         $baseOrder = Order::findOrFail($data['base_order_id']);
+    //         if ((string)$baseOrder->customer_id !== (string)$auth->id) {
+    //             throw ValidationException::withMessages(['base_order_id' => 'Order lama bukan milik Anda.']);
+    //         }
+    //         if ($baseOrder->status !== 'paid') {
+    //             throw ValidationException::withMessages(['base_order_id' => 'Order lama tidak valid untuk '.$intent]);
+    //         }
+    //     }
+
+    //     if ($intent === 'renew') {
+    //         if ($baseOrder->product_code !== $data['product_code']) {
+    //             throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
+    //         }
+    //         if ($baseOrder->package_code !== $data['package_code']) {
+    //             throw ValidationException::withMessages(['package_code' => ['Renew tidak boleh ganti paket. Gunakan upgrade.']]);
+    //         }
+    //     }
+    //     if ($intent === 'upgrade') {
+    //         if ($baseOrder->product_code !== $data['product_code']) {
+    //             throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
+    //         }
+    //     }
+
+    //     $product = MstProduct::where('product_code',$data['product_code'])->first();
+    //     if (!$product) throw ValidationException::withMessages(['product_code'=>'Produk tidak ditemukan.']);
+
+    //     $package = MstProductPackage::where('package_code',$data['package_code'])
+    //               ->where('product_code',$data['product_code'])->first();
+    //     if (!$package) throw ValidationException::withMessages(['package_code'=>'Paket tidak sesuai produk.']);
+
+    //     $duration = MstDuration::where('code',$data['duration_code'])->first();
+    //     if (!$duration) throw ValidationException::withMessages(['duration_code'=>'Durasi tidak valid.']);
+
+    //     $today = now()->toDateString();
+    //     $lastActiveForProduct = Order::query()
+    //         ->where('customer_id', $auth->id)
+    //         ->where('product_code', $data['product_code'])
+    //         ->where('status', 'paid')
+    //         ->where('is_active', true)
+    //         ->where(fn($q)=>$q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
+    //         ->orderByDesc('end_date')->first();
+
+    //     if ($intent === 'purchase' && $lastActiveForProduct) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Anda sudah memiliki langganan aktif untuk produk ini.',
+    //             'data' => [
+    //                 'existing_order_id' => (string)$lastActiveForProduct->id,
+    //                 'package_code' => $lastActiveForProduct->package_code,
+    //                 'package_name' => $lastActiveForProduct->package_name,
+    //                 'end_date' => optional($lastActiveForProduct->end_date)->toDateString(),
+    //             ],
+    //         ], 422);
+    //     }
+
+    //     ['start_date'=>$start,'end_date'=>$end] = $period->compute($intent,$baseOrder,$duration);
+
+    //     $priceInfo = $pricing->resolvePrice($data['product_code'],$data['package_code'],$data['duration_code'],$intent,$baseOrder?->id);
+    //     if (!isset($priceInfo['total'])) abort(422,'Tidak bisa menentukan harga.');
+
+    //     $subscriptionInstanceId = $intent==='purchase'
+    //         ? (string) Str::uuid()
+    //         : (data_get($baseOrder,'meta.subscription_instance_id') ?: ($lastActiveForProduct?->meta['subscription_instance_id'] ?? null));
+
+    //     $order = new Order();
+    //     $order->fill([
+    //         'customer_id'   => (string)$auth->id,
+    //         'customer_name' => $auth->full_name,
+    //         'customer_email'=> $auth->email,
+    //         'customer_phone'=> $auth->phone,
+
+    //         'product_code'  => $data['product_code'],
+    //         'product_name'  => $product->product_name ?? $data['product_code'],
+    //         'package_code'  => $data['package_code'],
+    //         'package_name'  => $package->name ?? $data['package_code'],
+    //         'duration_code' => $data['duration_code'],
+    //         'duration_name' => $duration->name ?? $data['duration_code'],
+
+    //         'pricelist_item_id'=> $priceInfo['pricelist_item_id'],
+    //         'price'            => $priceInfo['price'],
+    //         'discount'         => $priceInfo['discount'],
+    //         'total'            => $priceInfo['total'],
+    //         'currency'         => $priceInfo['currency'],
+
+    //         'start_date'   => $start,
+    //         'end_date'     => $end,
+    //         'is_active'    => false,
+    //         'status'       => 'pending',
+    //         'intent'       => $intent,
+    //         'base_order_id'=> $baseOrder?->id,
+    //     ]);
+    //     $order->save();
+
+    //     $midtransOrderId = $this->nextMidtransOrderId($product->product_code);
+
+    //     $frontend = rtrim(env('FRONTEND_URL','http://localhost:3000'),'/');
+    //     $payload = [
+    //         'transaction_details' => ['order_id'=>$midtransOrderId,'gross_amount'=>(int)round($order->total)],
+    //         'customer_details'    => ['first_name'=>$order->customer_name,'email'=>$order->customer_email,'phone'=>$order->customer_phone],
+    //         'item_details'        => [[
+    //             'id'=>$order->package_code,'price'=>(int)round($order->total),'quantity'=>1,
+    //             'name'=>"{$order->product_name} - {$order->package_name} ({$order->duration_name})",
+    //         ]],
+    //         'callbacks' => [
+    //             'finish'=>"$frontend/orders/{$order->id}?status=success",
+    //             'error' =>"$frontend/orders/{$order->id}?status=error",
+    //         ],
+    //     ];
+    //     $snapToken = app(MidtransService::class)->createSnapToken($payload);
+
+    //     $order->midtrans_order_id = $midtransOrderId;
+    //     $order->snap_token        = $snapToken;
+    //     $order->meta = array_merge($order->meta ?? [], [
+    //         'subscription_instance_id' => $subscriptionInstanceId,
+    //     ]);
+    //     $order->save();
+
+    //     return response()->json([
+    //         'success'=>true,'message'=>'Order created','data'=>[
+    //             'order_id'=>$order->id,'midtrans_order_id'=>$order->midtrans_order_id,'snap_token'=>$snapToken,
+    //             'total'=>(float)$order->total,'currency'=>$order->currency,'status'=>$order->status,'intent'=>$order->intent,
+    //             'base_order_id'=>$order->base_order_id,
+    //             'start_date'=>optional($order->start_date)->toDateString(),'end_date'=>optional($order->end_date)->toDateString(),
+    //             'product'=>['code'=>$order->product_code,'name'=>$order->product_name],
+    //             'package'=>['code'=>$order->package_code,'name'=>$order->package_name],
+    //             'duration'=>['code'=>$order->duration_code,'name'=>$order->duration_name],
+    //         ]
+    //     ],201);
+    // }
+
     private function createOrder(Request $req, PricingService $pricing, MidtransService $midtrans, PeriodService $period, string $intent)
     {
-        $data = $req->validate([
+        // Base validations
+        $baseRules = [
             'product_code'   => 'required|string|exists:mst_products,product_code',
             'package_code'   => 'required|string|exists:mst_product_packages,package_code',
             'duration_code'  => 'required|string|exists:mst_durations,code',
             'base_order_id'  => 'nullable|uuid|exists:orders,id',
-        ]);
+        ];
 
-        $auth = auth('customer-api')->user(); if (!$auth) abort(401,'Unauthorized');
+        $auth = auth('customer-api')->user();
 
+        // Pastikan hanya purchase yang boleh tanpa login
+        if (!$auth && $intent !== 'purchase') {
+            abort(401, 'Unauthorized');
+        }
+
+        if (!$auth) {
+            $contactRules = [
+                'contact.fullName' => 'required|string|max:255',
+                'contact.email'    => 'required|email|max:100',
+                'contact.phone'    => 'nullable|string|max:30',
+                'contact.company'  => 'nullable|string|max:100',
+            ];
+            $data = $req->validate(array_merge($baseRules, $contactRules));
+        } else {
+            $data = $req->validate($baseRules);
+        }
+
+        // baseOrder checks (renew/upgrade)
         $baseOrder = null;
         if (in_array($intent, ['renew','upgrade'])) {
             $baseOrder = Order::findOrFail($data['base_order_id']);
@@ -58,125 +224,203 @@ class OrderController extends Controller
             }
         }
 
-        if ($intent === 'renew') {
-            if ($baseOrder->product_code !== $data['product_code']) {
-                throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
-            }
-            if ($baseOrder->package_code !== $data['package_code']) {
-                throw ValidationException::withMessages(['package_code' => ['Renew tidak boleh ganti paket. Gunakan upgrade.']]);
-            }
-        }
-        if ($intent === 'upgrade') {
-            if ($baseOrder->product_code !== $data['product_code']) {
-                throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
-            }
-        }
-
+        // resolve product/package/duration
         $product = MstProduct::where('product_code',$data['product_code'])->first();
         if (!$product) throw ValidationException::withMessages(['product_code'=>'Produk tidak ditemukan.']);
 
         $package = MstProductPackage::where('package_code',$data['package_code'])
-                  ->where('product_code',$data['product_code'])->first();
+                ->where('product_code',$data['product_code'])->first();
         if (!$package) throw ValidationException::withMessages(['package_code'=>'Paket tidak sesuai produk.']);
 
         $duration = MstDuration::where('code',$data['duration_code'])->first();
         if (!$duration) throw ValidationException::withMessages(['duration_code'=>'Durasi tidak valid.']);
 
-        $today = now()->toDateString();
-        $lastActiveForProduct = Order::query()
-            ->where('customer_id', $auth->id)
-            ->where('product_code', $data['product_code'])
-            ->where('status', 'paid')
-            ->where('is_active', true)
-            ->where(fn($q)=>$q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
-            ->orderByDesc('end_date')->first();
+        // Start transaction
+        DB::beginTransaction();
+        try {
+            $guestCustomer = null;
+            $emailAlreadyExists = false;
+            $accountCreated = false;
+            $issuedAccessToken = null;
+            $issuedTokenTTL = null;
 
-        if ($intent === 'purchase' && $lastActiveForProduct) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda sudah memiliki langganan aktif untuk produk ini.',
-                'data' => [
-                    'existing_order_id' => (string)$lastActiveForProduct->id,
-                    'package_code' => $lastActiveForProduct->package_code,
-                    'package_name' => $lastActiveForProduct->package_name,
-                    'end_date' => optional($lastActiveForProduct->end_date)->toDateString(),
+            // If guest: attempt auto-create account if email not exists
+            if (!$auth) {
+                $contact = $data['contact'];
+                $email = strtolower(trim($contact['email']));
+                $phone = $contact['phone'] ?? null;
+                $fullName = $contact['fullName'] ?? $email;
+
+                $existing = Customer::where('email', $email)
+                    ->orWhere(function($q) use ($phone) {
+                        if ($phone) $q->where('phone', $phone);
+                    })->first();
+
+                if ($existing) {
+                    $emailAlreadyExists = true;
+                    $guestCustomer = null;
+                } else {
+                    // create customer with strong random password
+                    $randomPassword = Str::random(40);
+                    $guestCustomer = Customer::create([
+                        'full_name' => $fullName,
+                        'email'     => $email,
+                        'phone'     => $phone,
+                        'company'   => $contact['company'] ?? null,
+                        'password'  => Hash::make($randomPassword),
+                        'is_active' => true,
+                    ]);
+                    $accountCreated = true;
+
+                    // Issue one-time/short-lived JWT so FE can auto-login
+                    try {
+                        auth()->shouldUse('customer-api');
+                        // login returns token via tymon/jwt-auth
+                        $issuedAccessToken = auth('customer-api')->login($guestCustomer);
+                        // get TTL seconds (you may override config ttl if needed)
+                        $issuedTokenTTL = auth('customer-api')->factory()->getTTL() * 60;
+                    } catch (\Throwable $t) {
+                        \Log::warning('Auto-login after create customer failed: '.$t->getMessage());
+                        $issuedAccessToken = null;
+                        $issuedTokenTTL = null;
+                    }
+                }
+            } else {
+                // authenticated user -> order will be linked to auth
+                $guestCustomer = $auth;
+            }
+
+            // If customer id exists (auth or guestCustomer) check duplicate active product (prevent purchase)
+            $today = now()->toDateString();
+            $checkCustomerId = $auth ? $auth->id : ($guestCustomer ? $guestCustomer->id : null);
+            $lastActiveForProduct = null;
+            if ($checkCustomerId) {
+                $lastActiveForProduct = Order::query()
+                    ->where('customer_id', $checkCustomerId)
+                    ->where('product_code', $data['product_code'])
+                    ->where('status', 'paid')
+                    ->where('is_active', true)
+                    ->where(fn($q)=>$q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
+                    ->orderByDesc('end_date')->first();
+
+                if ($intent === 'purchase' && $lastActiveForProduct) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda sudah memiliki langganan aktif untuk produk ini.',
+                        'data' => [
+                            'existing_order_id' => (string)$lastActiveForProduct->id,
+                            'package_code' => $lastActiveForProduct->package_code,
+                            'package_name' => $lastActiveForProduct->package_name,
+                            'end_date' => optional($lastActiveForProduct->end_date)->toDateString(),
+                        ],
+                    ], 422);
+                }
+            }
+
+            // compute period and price
+            ['start_date'=>$start,'end_date'=>$end] = $period->compute($intent, $baseOrder, $duration);
+
+            $priceInfo = $pricing->resolvePrice($data['product_code'],$data['package_code'],$data['duration_code'],$intent, $baseOrder?->id);
+            if (!isset($priceInfo['total'])) {
+                DB::rollBack();
+                abort(422,'Tidak bisa menentukan harga.');
+            }
+
+            $subscriptionInstanceId = $intent==='purchase'
+                ? (string) Str::uuid()
+                : (data_get($baseOrder,'meta.subscription_instance_id') ?: ($lastActiveForProduct?->meta['subscription_instance_id'] ?? null));
+
+            // create order and link to guestCustomer if exists
+            $order = new Order();
+            $order->fill([
+                'customer_id'   => $guestCustomer ? (string)$guestCustomer->id : null,
+                'customer_name' => $guestCustomer ? $guestCustomer->full_name : ($data['contact']['fullName'] ?? ($auth->full_name ?? null)),
+                'customer_email'=> $guestCustomer ? $guestCustomer->email : ($data['contact']['email'] ?? ($auth->email ?? null)),
+                'customer_phone'=> $guestCustomer ? $guestCustomer->phone : ($data['contact']['phone'] ?? ($auth->phone ?? null)),
+
+                'product_code'  => $data['product_code'],
+                'product_name'  => $product->product_name ?? $data['product_code'],
+                'package_code'  => $data['package_code'],
+                'package_name'  => $package->name ?? $data['package_code'],
+                'duration_code' => $data['duration_code'],
+                'duration_name' => $duration->name ?? $data['duration_code'],
+
+                'pricelist_item_id'=> $priceInfo['pricelist_item_id'],
+                'price'            => $priceInfo['price'],
+                'discount'         => $priceInfo['discount'],
+                'total'            => $priceInfo['total'],
+                'currency'         => $priceInfo['currency'],
+
+                'start_date'   => $start,
+                'end_date'     => $end,
+                'is_active'    => false,
+                'status'       => 'pending',
+                'intent'       => $intent,
+                'base_order_id'=> $baseOrder?->id,
+            ]);
+            $order->save();
+
+            // create midtrans payload + snap token (same as before)
+            $midtransOrderId = $this->nextMidtransOrderId($product->product_code);
+            $frontend = rtrim(env('FRONTEND_URL','http://localhost:3000'),'/');
+            $payload = [
+                'transaction_details' => ['order_id'=>$midtransOrderId,'gross_amount'=>(int)round($order->total)],
+                'customer_details'    => ['first_name'=>$order->customer_name,'email'=>$order->customer_email,'phone'=>$order->customer_phone],
+                'item_details'        => [[
+                    'id'=>$order->package_code,'price'=>(int)round($order->total),'quantity'=>1,
+                    'name'=>"{$order->product_name} - {$order->package_name} ({$order->duration_name})",
+                ]],
+                'callbacks' => [
+                    'finish'=>"$frontend/orders/{$order->id}?status=success",
+                    'error' =>"$frontend/orders/{$order->id}?status=error",
                 ],
-            ], 422);
+            ];
+            $snapToken = app(MidtransService::class)->createSnapToken($payload);
+
+            $order->midtrans_order_id = $midtransOrderId;
+            $order->snap_token        = $snapToken;
+            $order->meta = array_merge($order->meta ?? [], [
+                'subscription_instance_id' => $subscriptionInstanceId,
+            ]);
+            $order->save();
+
+            DB::commit();
+
+            // Return response and include optional access_token if issued
+            $resp = [
+                'success'=>true,'message'=>'Order created','data'=>[
+                    'order_id'=>$order->id,
+                    'midtrans_order_id'=>$order->midtrans_order_id,
+                    'snap_token'=>$snapToken,
+                    'total'=>(float)$order->total,
+                    'currency'=>$order->currency,
+                    'status'=>$order->status,
+                    'intent'=>$order->intent,
+                    'base_order_id'=>$order->base_order_id,
+                    'start_date'=>optional($order->start_date)->toDateString(),
+                    'end_date'=>optional($order->end_date)->toDateString(),
+                    'product'=>['code'=>$order->product_code,'name'=>$order->product_name],
+                    'package'=>['code'=>$order->package_code,'name'=>$order->package_name],
+                    'duration'=>['code'=>$order->duration_code,'name'=>$order->duration_name],
+                    'account_created' => $accountCreated,
+                    'email_already_exists' => $emailAlreadyExists,
+                ]
+            ];
+
+            if ($issuedAccessToken) {
+                $resp['data']['access_token'] = (string)$issuedAccessToken;
+                $resp['data']['token_type'] = 'Bearer';
+                $resp['data']['expires_in'] = $issuedTokenTTL;
+            }
+
+            return response()->json($resp, 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Checkout/createOrder error: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
+            return response()->json(['success'=>false,'error'=>'Failed to create order'], 500);
         }
-
-        ['start_date'=>$start,'end_date'=>$end] = $period->compute($intent,$baseOrder,$duration);
-
-        $priceInfo = $pricing->resolvePrice($data['product_code'],$data['package_code'],$data['duration_code'],$intent,$baseOrder?->id);
-        if (!isset($priceInfo['total'])) abort(422,'Tidak bisa menentukan harga.');
-
-        $subscriptionInstanceId = $intent==='purchase'
-            ? (string) Str::uuid()
-            : (data_get($baseOrder,'meta.subscription_instance_id') ?: ($lastActiveForProduct?->meta['subscription_instance_id'] ?? null));
-
-        $order = new Order();
-        $order->fill([
-            'customer_id'   => (string)$auth->id,
-            'customer_name' => $auth->full_name,
-            'customer_email'=> $auth->email,
-            'customer_phone'=> $auth->phone,
-
-            'product_code'  => $data['product_code'],
-            'product_name'  => $product->product_name ?? $data['product_code'],
-            'package_code'  => $data['package_code'],
-            'package_name'  => $package->name ?? $data['package_code'],
-            'duration_code' => $data['duration_code'],
-            'duration_name' => $duration->name ?? $data['duration_code'],
-
-            'pricelist_item_id'=> $priceInfo['pricelist_item_id'],
-            'price'            => $priceInfo['price'],
-            'discount'         => $priceInfo['discount'],
-            'total'            => $priceInfo['total'],
-            'currency'         => $priceInfo['currency'],
-
-            'start_date'   => $start,
-            'end_date'     => $end,
-            'is_active'    => false,
-            'status'       => 'pending',
-            'intent'       => $intent,
-            'base_order_id'=> $baseOrder?->id,
-        ]);
-        $order->save();
-
-        $midtransOrderId = $this->nextMidtransOrderId($product->product_code);
-
-        $frontend = rtrim(env('FRONTEND_URL','http://localhost:3000'),'/');
-        $payload = [
-            'transaction_details' => ['order_id'=>$midtransOrderId,'gross_amount'=>(int)round($order->total)],
-            'customer_details'    => ['first_name'=>$order->customer_name,'email'=>$order->customer_email,'phone'=>$order->customer_phone],
-            'item_details'        => [[
-                'id'=>$order->package_code,'price'=>(int)round($order->total),'quantity'=>1,
-                'name'=>"{$order->product_name} - {$order->package_name} ({$order->duration_name})",
-            ]],
-            'callbacks' => [
-                'finish'=>"$frontend/orders/{$order->id}?status=success",
-                'error' =>"$frontend/orders/{$order->id}?status=error",
-            ],
-        ];
-        $snapToken = app(MidtransService::class)->createSnapToken($payload);
-
-        $order->midtrans_order_id = $midtransOrderId;
-        $order->snap_token        = $snapToken;
-        $order->meta = array_merge($order->meta ?? [], [
-            'subscription_instance_id' => $subscriptionInstanceId,
-        ]);
-        $order->save();
-
-        return response()->json([
-            'success'=>true,'message'=>'Order created','data'=>[
-                'order_id'=>$order->id,'midtrans_order_id'=>$order->midtrans_order_id,'snap_token'=>$snapToken,
-                'total'=>(float)$order->total,'currency'=>$order->currency,'status'=>$order->status,'intent'=>$order->intent,
-                'base_order_id'=>$order->base_order_id,
-                'start_date'=>optional($order->start_date)->toDateString(),'end_date'=>optional($order->end_date)->toDateString(),
-                'product'=>['code'=>$order->product_code,'name'=>$order->product_name],
-                'package'=>['code'=>$order->package_code,'name'=>$order->package_name],
-                'duration'=>['code'=>$order->duration_code,'name'=>$order->duration_name],
-            ]
-        ],201);
     }
 
     // ================== NEW: ADD-ON ==================
@@ -554,30 +798,80 @@ class OrderController extends Controller
     {
         $data = $req->validate([
             'product_code' => 'required|string|exists:mst_products,product_code',
+            'email'        => 'nullable|email',
         ]);
 
         $auth = auth('customer-api')->user();
-        if (!$auth) abort(401, 'Unauthorized');
+
+        if (!$auth) {
+            if (empty($data['email'])) {
+                // untuk publik, require param email supaya tidak bocor data
+                abort(401, 'Unauthorized: please login or provide email to check');
+            }
+            $customer = Customer::where('email', strtolower(trim($data['email'])))->first();
+            if (!$customer) {
+                // tidak ada akun -> pasti tidak aktif
+                return response()->json(['success'=>true,'data'=>[
+                    'has_active' => false,
+                    'existing_order_id' => null,
+                    'package_code' => null,
+                    'package_name' => null,
+                    'end_date' => null,
+                ]]);
+            }
+            $customerId = $customer->id;
+        } else {
+            $customerId = $auth->id;
+        }
 
         $today = now()->toDateString();
         $last = Order::query()
-            ->where('customer_id', $auth->id)
+            ->where('customer_id', (string)$customerId)
             ->where('product_code', $data['product_code'])
             ->where('status', 'paid')
             ->where('is_active', true)
-            ->where(fn($q) => $q->whereNull('end_date')->orWhereDate('end_date', '>=', $today))
+            ->where(fn($q) => $q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
             ->orderByDesc('end_date')
             ->first();
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'has_active' => (bool)$last,
-                'existing_order_id' => $last ? (string)$last->id : null,
-                'package_code' => $last ? $last->package_code : null,
-                'package_name' => $last ? $last->package_name : null,
-                'end_date' => $last ? optional($last->end_date)->toDateString() : null,
-            ],
-        ]);
+        return response()->json(['success'=>true,'data'=>[
+            'has_active' => (bool)$last,
+            'existing_order_id' => $last ? (string)$last->id : null,
+            'package_code' => $last ? $last->package_code : null,
+            'package_name' => $last ? $last->package_name : null,
+            'end_date' => $last ? optional($last->end_date)->toDateString() : null,
+        ]]);
     }
+
+
+    // public function checkProduct(Request $req)
+    // {
+    //     $data = $req->validate([
+    //         'product_code' => 'required|string|exists:mst_products,product_code',
+    //     ]);
+
+    //     $auth = auth('customer-api')->user();
+    //     if (!$auth) abort(401, 'Unauthorized');
+
+    //     $today = now()->toDateString();
+    //     $last = Order::query()
+    //         ->where('customer_id', $auth->id)
+    //         ->where('product_code', $data['product_code'])
+    //         ->where('status', 'paid')
+    //         ->where('is_active', true)
+    //         ->where(fn($q) => $q->whereNull('end_date')->orWhereDate('end_date', '>=', $today))
+    //         ->orderByDesc('end_date')
+    //         ->first();
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'data' => [
+    //             'has_active' => (bool)$last,
+    //             'existing_order_id' => $last ? (string)$last->id : null,
+    //             'package_code' => $last ? $last->package_code : null,
+    //             'package_name' => $last ? $last->package_name : null,
+    //             'end_date' => $last ? optional($last->end_date)->toDateString() : null,
+    //         ],
+    //     ]);
+    // }
 }

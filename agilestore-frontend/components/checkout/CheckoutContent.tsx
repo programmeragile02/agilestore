@@ -41,6 +41,7 @@ import {
   createPurchaseOrder,
   loginWithGoogle,
   checkProduct,
+  api,
 } from "@/lib/api";
 
 import { toast } from "@/hooks/use-toast";
@@ -251,7 +252,7 @@ function ContactInformation({
               <Input
                 id="phone"
                 type="tel"
-                placeholder="+62 812 3456 7890"
+                placeholder="0812 3456 7890"
                 value={data.phone}
                 onChange={(e) => handleChange("phone", e.target.value)}
                 className={`pl-10 ${
@@ -885,6 +886,96 @@ function ActiveProductModal({
   );
 }
 
+/* ============================================================================ 
+   SetInitialPasswordModal (new small component included in this file)
+============================================================================ */
+function SetInitialPasswordModal({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSet = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      toast({ variant: "destructive", title: "Password minimal 8 karakter" });
+      return;
+    }
+    if (newPassword !== confirm) {
+      toast({
+        variant: "destructive",
+        title: "Password konfirmasi tidak cocok",
+      });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.post("customer/set-initial-password", {
+        new_password: newPassword,
+      });
+      if (res?.data?.success) {
+        toast({ title: "Password berhasil disimpan" });
+        onOpenChange(false);
+      } else {
+        toast({
+          variant: "destructive",
+          title: res?.data?.message || "Gagal set password",
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: e?.response?.data?.message || e?.message || "Error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Set Password untuk Akun Anda</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            a Akun dibuat otomatis. Silakan set password agar dapat login
+            permanen. Anda juga bisa menggunakan kode 6-digit yang telah dikirim
+            ke email.
+          </p>
+          <Input
+            placeholder="New password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+          <Input
+            placeholder="Confirm password"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+        </div>
+        <DialogFooter className="mt-4">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Tutup
+          </Button>
+          <Button onClick={handleSet} disabled={loading}>
+            {loading ? "Menyimpan..." : "Simpan Password"}
+          </Button>
+        </DialogFooter>
+        <DialogClose className="sr-only" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ============================================================================
    MAIN CLIENT COMPONENT
 ============================================================================ */
@@ -909,7 +1000,10 @@ export default function CheckoutContent() {
     voucher: { code: "", discount: 0 },
   });
 
-  const isLoggedIn = Boolean(checkoutData.contact.email);
+  // track real auth state (getCustomerMe)
+  const [customerAuthenticated, setCustomerAuthenticated] = useState(false);
+
+  const isLoggedIn = customerAuthenticated;
 
   // cookie flag untuk middleware FE
   const setAuthCookie = (persistent = true) => {
@@ -937,6 +1031,9 @@ export default function CheckoutContent() {
     end_date?: string | null;
     existing_order_id?: string | null;
   } | null>(null);
+
+  // modal for set-password
+  const [showSetPasswordModal, setShowSetPasswordModal] = useState(false);
 
   useEffect(() => {
     const { contact, plan, payment } = checkoutData;
@@ -1101,19 +1198,41 @@ export default function CheckoutContent() {
       if (!duration_code) throw new Error("Durasi tidak valid.");
 
       try {
-        const check = await checkProduct(product);
-        if (check?.has_active) {
-          // Terdapat langganan aktif -> tampilkan modal
-          setActiveProductInfo({
-            product_code: product,
-            package_name: check.package_name ?? undefined,
-            package_code: check.package_code ?? undefined,
-            end_date: check.end_date ?? undefined,
-            existing_order_id: check.existing_order_id ?? undefined,
-          });
-          setShowActiveModal(true);
-          setIsPlacing(false);
-          return;
+        // jika user belum login -> gunakan email yang diisi di form
+        if (!customerAuthenticated) {
+          const guestEmail = checkoutData.contact.email?.trim();
+          if (!guestEmail) {
+            toast({ variant: "destructive", title: "Email wajib diisi" });
+            setIsPlacing(false);
+            return;
+          }
+
+          const check = await checkProduct(product, guestEmail);
+          if (check?.has_active) {
+            toast({
+              variant: "destructive",
+              title: "Tidak bisa membeli",
+              description:
+                "Email ini sudah memiliki langganan aktif untuk produk tersebut. Silakan login untuk mengelola langganan Anda.",
+            });
+            setIsPlacing(false);
+            return;
+          }
+        } else {
+          const check = await checkProduct(product);
+          if (check?.has_active) {
+            // Terdapat langganan aktif -> tampilkan modal
+            setActiveProductInfo({
+              product_code: product,
+              package_name: check.package_name ?? undefined,
+              package_code: check.package_code ?? undefined,
+              end_date: check.end_date ?? undefined,
+              existing_order_id: check.existing_order_id ?? undefined,
+            });
+            setShowActiveModal(true);
+            setIsPlacing(false);
+            return;
+          }
         }
       } catch (e) {
         // jika checkProduct gagal (network/auth), kita hentikan dan beri tahu user
@@ -1123,17 +1242,89 @@ export default function CheckoutContent() {
         return;
       }
 
-      const { order_id, snap_token } = await createPurchaseOrder({
+      const payload: any = {
         product_code: product,
         package_code: pkg,
         duration_code,
-      });
+        payment: checkoutData.payment,
+        voucher: checkoutData.voucher,
+      };
+      if (!customerAuthenticated) {
+        payload.contact = checkoutData.contact;
+      }
 
-      await ensureSnap();
-      openSnap(snap_token, order_id);
-    } catch (err) {
+      const resp: any = await createPurchaseOrder(payload);
+
+      // If backend signals email already exists -> prompt login/reset and STOP
+      if (resp?.email_already_exists) {
+        toast({
+          variant: "destructive",
+          title: "Email sudah terdaftar",
+          description:
+            "Email yang Anda masukkan sudah terdaftar. Silakan login.",
+        });
+        setIsPlacing(false);
+        return;
+      }
+
+      // If backend created account and returned token, we are probably auto-logged in (api already saved token)
+      if (resp?.account_created || resp?.access_token) {
+        // If createPurchaseOrder didn't already update FE state, fetch profile and set flags
+        try {
+          const me = await getCustomerMe();
+          if (me) {
+            setCheckoutData((prev) => ({
+              ...prev,
+              contact: { ...prev.contact, ...normalizeCustomerToContact(me) },
+            }));
+            setCustomerAuthenticated(true);
+            setAuthCookie(true);
+          }
+        } catch {
+          // ignore if me fails
+        }
+
+        toast({
+          title: "Akun dibuat",
+          description:
+            "Akun dibuat otomatis dan Anda sudah masuk sementara. Ketika sudah berhasil membayar silahkan masukkan password anda.",
+        });
+
+        // open set-password modal
+        // setShowSetPasswordModal(true);
+      }
+
+      // proceed to payment: resp.snap_token may exist
+      const orderId = resp?.order_id;
+      if (orderId && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`agile:setpw:order:${orderId}`, "1");
+          localStorage.setItem(
+            `agile:setpw:order:${orderId}:email`,
+            checkoutData.contact.email || ""
+          );
+          localStorage.setItem(
+            `agile:setpw:order:${orderId}:ts`,
+            String(Date.now())
+          );
+        } catch (e) {
+          console.warn("localStorage set failed", e);
+        }
+      }
+
+      const snapToken = resp?.snap_token;
+      if (snapToken) {
+        await ensureSnap();
+        openSnap(snapToken, orderId);
+      } else if (orderId) {
+        // fallback to thank you / order detail
+        router.push(`/orders/${orderId}`);
+      } else {
+        throw new Error("Gagal membuat order");
+      }
+    } catch (err: any) {
       console.error(err);
-      toast({ title: "Failed Order" });
+      toast({ title: err?.message || "Failed Order" });
     } finally {
       setIsPlacing(false);
     }
@@ -1231,6 +1422,12 @@ export default function CheckoutContent() {
                 if (!v) setActiveProductInfo(null);
               }}
               info={activeProductInfo}
+            />
+
+            {/* Set initial password modal */}
+            <SetInitialPasswordModal
+              open={showSetPasswordModal}
+              onOpenChange={setShowSetPasswordModal}
             />
           </div>
         </div>

@@ -34,7 +34,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const PROTECTED = ["/checkout"];
+const PROTECTED = ["/my-account"];
 
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
@@ -52,5 +52,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/checkout/:path*"],
+  matcher: ["/my-account/:path*"],
 };

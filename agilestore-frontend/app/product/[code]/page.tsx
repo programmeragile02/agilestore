@@ -825,10 +825,10 @@ function ProductPricingStandalone({
     // }
   };
 
-  const goToLogin = () => {
-    const next = pendingHref || "/";
-    router.push(`/login?next=${encodeURIComponent(next)}`);
-  };
+  // const goToLogin = () => {
+  //   const next = pendingHref || "/";
+  //   router.push(`/login?next=${encodeURIComponent(next)}`);
+  // };
 
   return (
     <>
@@ -921,7 +921,7 @@ function ProductPricingStandalone({
         </div>
       </section>
 
-      <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
+      {/* <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>You are not logged in yet</DialogTitle>
@@ -936,7 +936,7 @@ function ProductPricingStandalone({
             <Button onClick={goToLogin}>Go to login page</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
     </>
   );
 }

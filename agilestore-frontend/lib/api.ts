@@ -339,6 +339,12 @@ export type CreatePurchasePayload = {
   product_code: string;
   package_code: string;
   duration_code: string;
+  contact?: {
+    fullName: string;
+    email: string;
+    phone: string;
+    company?: string | null;
+  };
 };
 
 export type CreateRenewPayload = {
@@ -366,11 +372,22 @@ export type CreateOrderResponse = {
   status: string;
 };
 
-// check product
-export async function checkProduct(product_code: string) {
-  const { data } = await api.get("orders/check-product", { params: { product_code } });
-  if (data?.success === false) throw new Error(data?.message || "Failed to check product");
-  return data.data; // { has_active, existing_order_id, package_name, end_date }
+/**
+ * Check if a product is already active for the current customer (auth)
+ * or for a given guest email (when not authenticated).
+ *
+ * @param product_code string
+ * @param guestEmail optional string - only used when not logged in
+ * @returns { has_active, existing_order_id, package_code, package_name, end_date }
+ */
+export async function checkProduct(product_code: string, guestEmail?: string) {
+  const params: Record<string, any> = { product_code };
+  if (guestEmail) params.email = guestEmail;
+
+  const { data } = await api.get("orders/check-product", { params });
+  if (data?.success === false)
+    throw new Error(data?.message || "Failed to check product");
+  return data.data;
 }
 
 // New order (Purchase)
@@ -378,7 +395,23 @@ export async function createPurchaseOrder(payload: CreatePurchasePayload) {
   const { data } = await api.post("orders", payload);
   if (data?.success === false)
     throw new Error(data?.message || "Failed to create purchase order");
-  return data.data as CreateOrderResponse;
+
+  // if backend returned access_token (auto-login), store it
+  if (data?.data?.access_token) {
+    setCustomerToken(String(data.data.access_token));
+    // optional: set cookie for middleware check
+    if (typeof window !== "undefined") {
+      document.cookie = `customer_auth=1; Path=/; SameSite=Lax; Max-Age=${
+        data.data.expires_in ?? 3600
+      }`;
+    }
+  }
+  return data.data as CreateOrderResponse & {
+    account_created?: boolean;
+    email_already_exists?: boolean;
+    access_token?: string;
+    expires_in?: number;
+  };
 }
 
 // Renew (Perpanjangan)

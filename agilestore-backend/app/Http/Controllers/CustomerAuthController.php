@@ -385,6 +385,28 @@ class CustomerAuthController extends Controller
         auth()->shouldUse('customer-api');
         $token = auth('customer-api')->login($cust);
 
-        return $this->tokenResponse($token); // sudah ada di controllermu
+        return $this->tokenResponse($token);
+    }
+
+    public function setInitialPassword(Request $request)
+    {
+        auth()->shouldUse('customer-api');
+        /** @var Customer $u */
+        $u = auth('customer-api')->user();
+        if (!$u) abort(401);
+
+        // Security: hanya allow jika akun baru/masih fresh (mis. <24 jam). Sesuaikan kebijakan.
+        if ($u->created_at && $u->created_at->diffInHours(now()) > 24) {
+            return response()->json(['success'=>false,'message'=>'Token expired. Gunakan fitur Forgot Password untuk setel password.'], 403);
+        }
+
+        $data = $request->validate([
+            'new_password' => ['required', Password::min(8)->letters()->numbers()],
+        ]);
+
+        $u->password = Hash::make($data['new_password']);
+        $u->save();
+
+        return response()->json(['success'=>true,'message'=>'Password set successfully']);
     }
 }

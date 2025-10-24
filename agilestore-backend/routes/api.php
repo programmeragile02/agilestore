@@ -43,6 +43,7 @@ Route::prefix('customer')->group(function () {
         Route::post('/profile-photo',   [CustomerAuthController::class, 'updateProfilePhoto']);
         Route::delete('/profile-photo', [CustomerAuthController::class, 'deleteProfilePhoto']);
         Route::put('/change-password',  [CustomerAuthController::class, 'changePassword']);
+        Route::post('/set-initial-password', [CustomerAuthController::class, 'setInitialPassword']);
 
         // subscription
         Route::get('/subscriptions', [OrderController::class, 'mySubscriptions']);
@@ -55,11 +56,18 @@ Route::prefix('customer')->group(function () {
     });
 });
 
+// check-product: allow guest email check OR auth check
+Route::get('/orders/check-product', [OrderController::class, 'checkProduct'])
+    ->middleware(['throttle:30,1']); // rate-limit tinggi tapi wajar
+
+// purchase: allow guest to create purchase (auto-register logic lives in controller)
+Route::post('/orders', [OrderController::class, 'purchase'])
+    ->middleware(['throttle:10,1']); // limit to avoid abuse
+
+/*
+ * Protected endpoints (only for authenticated customers)
+ */
 Route::middleware('auth:customer-api')->group(function () {
-    // check produk agar tidak order lebih dari 1 (produk yang sama)
-    Route::get('/orders/check-product', [OrderController::class, 'checkProduct']);
-    // Order baru (Purchase)
-    Route::post('/orders', [OrderController::class, 'purchase']);
     // Renewal (Perpanjangan durasi)
     Route::post('/orders/renew', [OrderController::class, 'renew']);
     // Upgrade paket
