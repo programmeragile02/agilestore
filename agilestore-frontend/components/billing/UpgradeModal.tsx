@@ -120,12 +120,9 @@ export default function UpgradeModal({
 
             {/* Estimasi Harga */}
             <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-              <div className="text-sm text-slate-600">Estimasi harga</div>
+              <div className="text-sm text-slate-600">Harga:</div>
               <div className="text-xl font-semibold">
                 {estimated > 0 ? `IDR ${estimated.toLocaleString("id-ID")}` : "-"}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                * Total akhir (termasuk prorata) dihitung server saat proses upgrade.
               </div>
             </div>
           </div>

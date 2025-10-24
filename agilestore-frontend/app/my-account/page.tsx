@@ -1434,7 +1434,7 @@ export default function MyAccountPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 shadow-md">
+                {/* <Card className="border-0 shadow-md">
                   <CardHeader>
                     <CardTitle>Notification Settings</CardTitle>
                   </CardHeader>
@@ -1491,7 +1491,7 @@ export default function MyAccountPage() {
                       />
                     </div>
                   </CardContent>
-                </Card>
+                </Card> */}
               </div>
             </div>
           </div>

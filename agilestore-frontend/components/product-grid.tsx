@@ -159,6 +159,7 @@ type ProductRow = {
   product_code?: string;
   product_name: string;
   description?: string | null;
+  image?: string | null;
   // tambah field lain bila ada di backend-mu
 };
 
@@ -193,7 +194,8 @@ export default function ProductGrid({ query = "" }: { query?: string }) {
   }, [products, query]);
 
   const ProductCard = ({ product }: { product: ProductRow }) => {
-    const heroImage = "/placeholder.svg?height=300&width=400";
+    const panelBase = process.env.NEXT_PUBLIC_PANEL_BASE;
+    const heroImage = `${panelBase}/storage/${product.image}`;
     const isDisabled = !product.product_code;
 
     const cardContent = (

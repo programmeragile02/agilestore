@@ -446,7 +446,7 @@ function PlanDuration({
           <Label className="text-sm font-semibold text-gray-900">
             Duration
           </Label>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex-col gap-5 flex-wrap">
             {durations.map((d) => {
               const active = data.duration === d.length;
               const disabled =
@@ -458,7 +458,7 @@ function PlanDuration({
                   size="sm"
                   disabled={disabled}
                   onClick={() => set({ duration: d.length })}
-                  className={`flex-1 min-w-[96px] h-10 rounded-full ${
+                  className={`flex-1 m-1 min-w-[96px] h-10 rounded-full ${
                     active
                       ? "bg-gradient-to-r from-indigo-500 to-blue-500 text-white"
                       : "border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -479,7 +479,7 @@ function PlanDuration({
         </div>
 
         {/* Currency & Tax Mode */}
-        <div className="grid grid-cols-2 gap-6">
+        {/* <div className="grid grid-cols-2 gap-6">
           <div className="space-y-3">
             <Label className="text-sm font-semibold text-gray-900">
               Currency
@@ -540,7 +540,7 @@ function PlanDuration({
               </SelectContent>
             </Select>
           </div>
-        </div>
+        </div> */}
       </CardContent>
     </Card>
   );
