@@ -9,6 +9,7 @@ use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\Payments\MidtransWebhookController;
 use App\Http\Controllers\AgileSectionController;
 use App\Http\Controllers\AgileStoreController;
+use App\Http\Controllers\TranslateBatchController;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -126,3 +127,4 @@ Route::prefix('agile-store')->group(function () {
     Route::get('/sections/{id}/export',          [AgileStoreController::class, 'exportSection']);
     Route::post('/sections/import',              [AgileStoreController::class, 'importSection']);
 });
+Route::post('/translate-batch', [TranslateBatchController::class, 'translate']);

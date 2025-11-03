@@ -1,83 +1,44 @@
 "use client";
-
+import { useLanguage } from "./LanguageProvider";
+import { Languages } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ChevronDown } from "lucide-react";
-import { selectGoogleLanguage } from "./GooglePageTranslate";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
+import { cn } from "@/lib/utils";
 
-const LANGS = [
-  { code: "id" as const, label: "Indonesia", flag: "🇮🇩" },
-  { code: "en" as const, label: "English", flag: "🇬🇧" },
-];
+export default function LanguageSwitcher() {
+  const { lang, setLang } = useLanguage();
+  const [mounted, setMounted] = useState(false);
+  const router = useRouter();
+  useEffect(() => setMounted(true), []);
 
-const COOKIE_NAME = "NEXT_LOCALE";
-
-function readCookie(name: string): string | null {
-  const m = document.cookie.match(
-    new RegExp(`(?:^|;\\s*)${name}=([^;]+)(?:;|$)`, "i")
-  );
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
-export default function LanguageSwitcher({
-  className = "",
-}: {
-  className?: string;
-}) {
-  const [current, setCurrent] = useState<"id" | "en">("id");
-  const active = LANGS.find((l) => l.code === current)!;
-
-  useEffect(() => {
-    const fromCookie = readCookie(COOKIE_NAME);
-    const nav = (navigator.language || "id").slice(0, 2);
-    const detected =
-      fromCookie === "en" || fromCookie === "id"
-        ? (fromCookie as "id" | "en")
-        : nav === "en"
-        ? "en"
-        : "id";
-    setCurrent(detected);
-
-    // sinkronkan terjemahan Google di awal
-    selectGoogleLanguage(detected);
-  }, []);
-
-  const setLang = (code: "id" | "en") => {
-    // simpan preferensi (opsional)
-    document.cookie = `${COOKIE_NAME}=${code}; path=/; max-age=${
-      60 * 60 * 24 * 365
-    }`;
-    setCurrent(code);
-    // trigger Google translate
-    selectGoogleLanguage(code);
+  const toggle = () => {
+    const next = lang === "en" ? "id" : "en";
+    setLang(next);
+    // pastikan semua kunci cookie terisi konsisten (server akan baca agile_lang)
+    Cookies.set("agile_lang", next, { path: "/", sameSite: "Lax" });
+    Cookies.set("lang", next, { path: "/", sameSite: "Lax" });
+    Cookies.set("agile.lang", next, { path: "/", sameSite: "Lax" });
+    router.refresh(); // <— penting: re-render server components
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          className={`h-9 gap-2 rounded-xl px-3 ${className}`}
+    <div className="fixed right-4 top-4 z-[60]">
+      <div className="relative">
+        <button
+          aria-label="Language"
+          onClick={toggle}
+          className={cn(
+            "flex items-center gap-2 rounded-2xl px-3 py-2 shadow-lg",
+            "bg-white/80 backdrop-blur hover:bg-white dark:bg-slate-900/70 dark:hover:bg-slate-900"
+          )}
         >
-          <span className="text-base">{active.flag}</span>
-          <span className="hidden sm:inline">{active.label}</span>
-          <ChevronDown className="h-4 w-4 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        {LANGS.filter((l) => l.code !== active.code).map((l) => (
-          <DropdownMenuItem key={l.code} onClick={() => setLang(l.code)}>
-            <span className="mr-2">{l.flag}</span>
-            <span className="font-medium">{l.label}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <Languages className="w-4 h-4" />
+          {mounted && (
+            <span className="text-sm font-medium uppercase">{lang}</span>
+          )}
+        </button>
+      </div>
+    </div>
   );
 }

@@ -12,6 +12,9 @@ import {
   MapPin,
 } from "lucide-react";
 import { AgileStoreAPI } from "@/lib/api";
+import { cookies } from "next/headers";
+
+type Lang = "id" | "en";
 
 // Fallback jika content belum diisi
 const FALLBACK = {
@@ -29,40 +32,95 @@ const FALLBACK = {
 
 type FooterContent = typeof FALLBACK;
 
+async function readLang(): Promise<Lang> {
+  const maybe = cookies() as any;
+  const store = typeof maybe?.then === "function" ? await maybe : maybe;
+  const raw =
+    store.get("agile.lang")?.value ??
+    store.get("agile_lang")?.value ??
+    store.get("lang")?.value ??
+    "";
+  return raw === "en" ? "en" : "id";
+}
+
 // mapping label → href yang aman
 function linkHref(label: string) {
   const key = label.trim().toLowerCase();
-  if (key.includes("product")) return "/products";
-  if (key.includes("pricing")) return "/pricing";
-  if (key.includes("about")) return "/about";
-  if (key.includes("contact")) return "/contact";
-  if (key.includes("support") || key.includes("help")) return "/support";
+  if (key.includes("product") || key.includes("produk")) return "/products";
+  if (key.includes("pricing") || key.includes("harga")) return "/pricing";
+  if (key.includes("about") || key.includes("tentang")) return "/about";
+  if (key.includes("contact") || key.includes("kontak")) return "/contact";
+  if (
+    key.includes("support") ||
+    key.includes("dukungan") ||
+    key.includes("bantuan")
+  )
+    return "/support";
   return `/${key.replace(/\s+/g, "-")}`;
 }
 
-async function getFooterContent(): Promise<FooterContent> {
-  const sec = await AgileStoreAPI.getSection<FooterContent>("footer");
-  const c = (sec?.content as FooterContent) ?? FALLBACK;
+async function getFooterContent(lang: Lang): Promise<FooterContent> {
+  const sec = await AgileStoreAPI.getSection<any>("footer");
+
+  // Pilih payload sesuai bahasa (berapa pun struktur yang ada)
+  const contentEn =
+    sec?.content_en ?? sec?.content?.en ?? sec?.content?.["en"] ?? null;
+
+  const base: FooterContent =
+    lang === "en" && contentEn
+      ? (contentEn as FooterContent)
+      : (sec?.content as FooterContent) ?? FALLBACK;
 
   return {
-    brand: c.brand ?? FALLBACK.brand,
+    brand: base.brand ?? FALLBACK.brand,
     contact: {
-      email: c.contact?.email ?? FALLBACK.contact.email,
-      phone: c.contact?.phone ?? FALLBACK.contact.phone,
-      address: c.contact?.address ?? FALLBACK.contact.address,
+      email: base.contact?.email ?? FALLBACK.contact.email,
+      phone: base.contact?.phone ?? FALLBACK.contact.phone,
+      address: base.contact?.address ?? FALLBACK.contact.address,
     },
     quickLinks:
-      Array.isArray(c.quickLinks) && c.quickLinks.length
-        ? c.quickLinks
+      Array.isArray(base.quickLinks) && base.quickLinks.length
+        ? base.quickLinks
         : FALLBACK.quickLinks,
-    description: c.description ?? FALLBACK.description,
-    newsletterLabel: c.newsletterLabel ?? FALLBACK.newsletterLabel,
+    description: base.description ?? FALLBACK.description,
+    newsletterLabel: base.newsletterLabel ?? FALLBACK.newsletterLabel,
   };
 }
 
 async function Footer() {
-  const data = await getFooterContent();
+  const lang = await readLang();
+  const data = await getFooterContent(lang);
   const year = new Date().getFullYear();
+
+  // Label UI statis bilingual
+  const T = {
+    en: {
+      quickLinks: "Quick Links",
+      contactInfo: "Contact Info",
+      stayUpdated: "Stay Updated",
+      newsletterDesc:
+        "Subscribe to our newsletter for the latest updates and exclusive offers.",
+      subscribe: "Subscribe",
+      privacy: "Privacy Policy",
+      terms: "Terms of Service",
+      cookie: "Cookie Policy",
+      allRights: "All rights reserved.",
+    },
+    id: {
+      quickLinks: "Tautan Cepat",
+      contactInfo: "Kontak",
+      stayUpdated: "Tetap Terupdate",
+      newsletterDesc:
+        "Berlangganan newsletter kami untuk update terbaru dan penawaran eksklusif.",
+      subscribe: "Berlangganan",
+      privacy: "Kebijakan Privasi",
+      terms: "Syarat Layanan",
+      cookie: "Kebijakan Cookie",
+      allRights: "Hak cipta dilindungi.",
+    },
+  } as const;
+
+  const L = T[lang];
 
   return (
     <footer className="bg-foreground text-background">
@@ -75,7 +133,7 @@ async function Footer() {
                 <span className="text-white font-bold text-sm">
                   {data.brand
                     ?.split(" ")
-                    .map((s) => s[0])
+                    .map((s: string) => s[0])
                     .join("")
                     .slice(0, 2)
                     .toUpperCase() || "AS"}
@@ -91,6 +149,7 @@ async function Footer() {
                 variant="ghost"
                 size="sm"
                 className="text-background/80 hover:text-background hover:bg-background/10"
+                aria-label="Facebook"
               >
                 <Facebook className="h-4 w-4" />
               </Button>
@@ -98,6 +157,7 @@ async function Footer() {
                 variant="ghost"
                 size="sm"
                 className="text-background/80 hover:text-background hover:bg-background/10"
+                aria-label="Twitter / X"
               >
                 <Twitter className="h-4 w-4" />
               </Button>
@@ -105,6 +165,7 @@ async function Footer() {
                 variant="ghost"
                 size="sm"
                 className="text-background/80 hover:text-background hover:bg-background/10"
+                aria-label="LinkedIn"
               >
                 <Linkedin className="h-4 w-4" />
               </Button>
@@ -112,6 +173,7 @@ async function Footer() {
                 variant="ghost"
                 size="sm"
                 className="text-background/80 hover:text-background hover:bg-background/10"
+                aria-label="Instagram"
               >
                 <Instagram className="h-4 w-4" />
               </Button>
@@ -120,9 +182,9 @@ async function Footer() {
 
           {/* Quick Links */}
           <div className="space-y-4">
-            <h3 className="font-serif font-semibold text-lg">Quick Links</h3>
+            <h3 className="font-serif font-semibold text-lg">{L.quickLinks}</h3>
             <ul className="space-y-2">
-              {data.quickLinks.map((label, i) => (
+              {data.quickLinks.map((label: string, i: number) => (
                 <li key={`${label}-${i}`}>
                   <Link
                     href={linkHref(label)}
@@ -137,7 +199,9 @@ async function Footer() {
 
           {/* Contact Info */}
           <div className="space-y-4">
-            <h3 className="font-serif font-semibold text-lg">Contact Info</h3>
+            <h3 className="font-serif font-semibold text-lg">
+              {L.contactInfo}
+            </h3>
             <ul className="space-y-3">
               <li className="flex items-center space-x-3">
                 <Mail className="h-4 w-4 text-background/80" />
@@ -158,19 +222,21 @@ async function Footer() {
 
           {/* Newsletter */}
           <div className="space-y-4">
-            <h3 className="font-serif font-semibold text-lg">Stay Updated</h3>
-            <p className="text-background/80 text-sm">
-              Subscribe to our newsletter for the latest updates and exclusive
-              offers.
-            </p>
+            <h3 className="font-serif font-semibold text-lg">
+              {L.stayUpdated}
+            </h3>
+            <p className="text-background/80 text-sm">{L.newsletterDesc}</p>
             <div className="space-y-2">
               <Input
                 type="email"
-                placeholder={data.newsletterLabel || "Enter your email"}
+                placeholder={
+                  data.newsletterLabel ||
+                  (lang === "en" ? "Enter your email" : "Masukkan email Anda")
+                }
                 className="bg-background/10 border-background/20 text-background placeholder:text-background/60"
               />
               <Button className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90">
-                Subscribe
+                {L.subscribe}
               </Button>
             </div>
           </div>
@@ -179,26 +245,26 @@ async function Footer() {
         <div className="border-t border-background/20 mt-12 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <p className="text-background/80 text-sm">
-              © {year} {data.brand}. All rights reserved.
+              © {year} {data.brand}. {L.allRights}
             </p>
             <div className="flex space-x-6 text-sm">
               <Link
                 href="/privacy"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                Privacy Policy
+                {T[lang].privacy}
               </Link>
               <Link
                 href="/terms"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                Terms of Service
+                {T[lang].terms}
               </Link>
               <Link
                 href="/cookies"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                Cookie Policy
+                {T[lang].cookie}
               </Link>
             </div>
           </div>

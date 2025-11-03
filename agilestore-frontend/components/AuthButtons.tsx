@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { toast } from "@/hooks/use-toast";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,26 +14,57 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { User as UserIcon, UserCircle, LogOut, Settings } from "lucide-react";
+import { User as UserIcon, LogOut, Settings } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { getCustomerMe, logoutCustomer } from "@/lib/api";
+import { useLanguage } from "@/components/LanguageProvider";
 
 export default function AuthButtons() {
   const router = useRouter();
+  const { lang } = useLanguage();
+
+  const T = useMemo(
+    () =>
+      ({
+        en: {
+          login: "Login",
+          register: "Register",
+          signedOutTitle: "Signed out",
+          signedOutDesc: "See you again!",
+          myAccount: "My Account",
+          logout: "Logout",
+        },
+        id: {
+          login: "Masuk",
+          register: "Daftar",
+          signedOutTitle: "Berhasil keluar",
+          signedOutDesc: "Sampai jumpa!",
+          myAccount: "Akun Saya",
+          logout: "Keluar",
+        },
+      } as const),
+    [lang]
+  );
+  const L = T[lang];
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const load = async () => {
+    let mounted = true;
+    (async () => {
       try {
         const me = await getCustomerMe();
-        setUser(me);
+        if (mounted) setUser(me);
       } catch {
-        setUser(null);
+        if (mounted) setUser(null);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
+    })();
+    return () => {
+      mounted = false;
     };
-    load();
   }, []);
 
   const handleLogout = async () => {
@@ -42,9 +72,10 @@ export default function AuthButtons() {
       await logoutCustomer();
       document.cookie = "customer_auth=; Path=/; Max-Age=0; SameSite=Lax";
       setUser(null);
-      toast({ title: "Signed out", description: "See you again!" });
+      toast({ title: L.signedOutTitle, description: L.signedOutDesc });
     } finally {
       router.push("/");
+      router.refresh(); // sinkronkan server components setelah auth berubah
     }
   };
 
@@ -55,15 +86,15 @@ export default function AuthButtons() {
   if (!user) {
     return (
       <div className="flex space-x-2">
-        <Button variant="outline" size="sm" className="cursor-pointer">
-          <Link href="/login">Login</Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/login">{L.login}</Link>
         </Button>
-
         <Button
           size="sm"
-          className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600 cursor-pointer"
+          className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
+          asChild
         >
-          <Link href="/register">Register</Link>
+          <Link href="/register">{L.register}</Link>
         </Button>
       </div>
     );
@@ -79,7 +110,7 @@ export default function AuthButtons() {
         >
           {user.profile_photo_url || user.provider_avatar_url ? (
             <Image
-              src={`${user.profile_photo_url || user.provider_avatar_url}`}
+              src={user.profile_photo_url || user.provider_avatar_url}
               alt="Profile"
               width={40}
               height={40}
@@ -97,7 +128,6 @@ export default function AuthButtons() {
         className="min-w-[220px] rounded-xl border border-border/70 shadow-lg
                    backdrop-blur bg-popover/95 p-2"
       >
-        {/* Header */}
         <DropdownMenuLabel className="px-3 py-3">
           <div className="flex items-center gap-3">
             <div className="space-y-0.5">
@@ -115,22 +145,20 @@ export default function AuthButtons() {
 
         <DropdownMenuSeparator />
 
-        {/* Items */}
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-black"
           onClick={() => router.push("/my-account")}
         >
-          <Settings className="h-4 w-4 hover:text-white" />
-          My Account
+          <Settings className="h-4 w-4" />
+          {L.myAccount}
         </DropdownMenuItem>
 
-        {/* Logout – merah */}
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/30 font-semibold"
           onClick={handleLogout}
         >
-          <LogOut className="h-4 w-4 text-red-600 text" />
-          Logout
+          <LogOut className="h-4 w-4 text-red-600" />
+          {L.logout}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

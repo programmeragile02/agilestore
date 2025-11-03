@@ -1,15 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Search, ShoppingCart } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import AuthButtons from "./AuthButtons";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
-import LanguageToggle from "@/components/LanguageToogle";
+import { useLanguage } from "@/components/LanguageProvider";
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { lang } = useLanguage();
+
+  const T = useMemo(
+    () =>
+      ({
+        en: {
+          home: "Home",
+          products: "Products",
+          pricing: "Pricing",
+          about: "About",
+          contact: "Contact",
+        },
+        id: {
+          home: "Beranda",
+          products: "Produk",
+          pricing: "Harga",
+          about: "Tentang",
+          contact: "Kontak",
+        },
+      } as const),
+    [lang]
+  );
+
+  const L = T[lang];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -28,49 +52,44 @@ export function Header() {
           </div>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-8">
+          <nav className="hidden md:flex items-center space-x-6">
             <Link
               href="/"
               className="text-gray-900 hover:text-indigo-600 transition-colors font-medium"
             >
-              Home
+              {L.home}
             </Link>
             <Link
               href="/products"
               className="text-gray-900 hover:text-indigo-600 transition-colors font-medium"
             >
-              Products
+              {L.products}
             </Link>
             <Link
               href="/pricing"
               className="text-gray-900 hover:text-indigo-600 transition-colors font-medium"
             >
-              Pricing
+              {L.pricing}
             </Link>
             <Link
               href="/about"
               className="text-gray-900 hover:text-indigo-600 transition-colors font-medium"
             >
-              About
+              {L.about}
             </Link>
             <Link
               href="/contact"
               className="text-gray-900 hover:text-indigo-600 transition-colors font-medium"
             >
-              Contact
+              {L.contact}
             </Link>
+
+            {/* Language switcher (desktop) */}
             {/* <LanguageSwitcher /> */}
-            <LanguageToggle className="ml-2" />
           </nav>
 
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
-            {/* <Button variant="ghost" size="sm">
-              <Search className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm">
-              <ShoppingCart className="h-4 w-4" />
-            </Button> */}
             <AuthButtons />
           </div>
 
@@ -79,7 +98,8 @@ export function Header() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              onClick={() => setIsMenuOpen((v) => !v)}
+              aria-label="Toggle menu"
             >
               {isMenuOpen ? (
                 <X className="h-5 w-5" />
@@ -98,34 +118,37 @@ export function Header() {
                 href="/"
                 className="block px-3 py-2 text-gray-900 hover:text-indigo-600 transition-colors"
               >
-                Home
+                {L.home}
               </Link>
               <Link
                 href="/products"
                 className="block px-3 py-2 text-gray-900 hover:text-indigo-600 transition-colors"
               >
-                Products
+                {L.products}
               </Link>
               <Link
                 href="/pricing"
                 className="block px-3 py-2 text-gray-900 hover:text-indigo-600 transition-colors"
               >
-                Pricing
+                {L.pricing}
               </Link>
               <Link
                 href="/about"
                 className="block px-3 py-2 text-gray-900 hover:text-indigo-600 transition-colors"
               >
-                About
+                {L.about}
               </Link>
               <Link
                 href="/contact"
                 className="block px-3 py-2 text-gray-900 hover:text-indigo-600 transition-colors"
               >
-                Contact
+                {L.contact}
               </Link>
-              <div className="flex items-center space-x-2 px-3 py-2">
+
+              <div className="flex items-center justify-between px-3 py-2">
                 <AuthButtons />
+                {/* Language switcher (mobile) */}
+                <LanguageSwitcher />
               </div>
             </div>
           </div>

@@ -471,6 +471,7 @@
 //   );
 // }
 
+// app/pricing/page.tsx (atau file page yang kamu pakai)
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Header } from "@/components/header";
@@ -488,15 +489,33 @@ import {
 import { fetchProductDetail } from "@/lib/api";
 
 /* =========================
-   Types (aligned with your api.ts)
+   Types
 ========================= */
 type ProductDetail = Awaited<ReturnType<typeof fetchProductDetail>>;
+type Lang = "id" | "en";
 
 /* =========================
-   Locale & Currency helpers
+   Helpers: language & currency
 ========================= */
 
-type Lang = "id" | "en";
+// Edge/Node safe cookies()
+async function readLangFromCookies(): Promise<Lang> {
+  const maybe = cookies() as any;
+  const store = typeof maybe?.then === "function" ? await maybe : maybe;
+  const raw =
+    store.get("agile.lang")?.value ??
+    store.get("agile_lang")?.value ??
+    store.get("lang")?.value ??
+    "";
+  return raw === "en" ? "en" : "id";
+}
+
+async function readUsdRate(): Promise<number> {
+  const maybe = cookies() as any;
+  const store = typeof maybe?.then === "function" ? await maybe : maybe;
+  const num = Number(store.get("usd_idr")?.value);
+  return Number.isFinite(num) && num > 0 ? num : 15500;
+}
 
 /** Normalisasi angka dari berbagai bentuk (number / "Rp 100.000" / "100,000" / "$79") */
 function normalizePriceToNumber(v: unknown): number {
@@ -530,20 +549,14 @@ function formatPriceFromIDR(amountIdr: number, locale: Lang, usdRate: number) {
   }
 }
 
-/** Find monthly duration: unit=month & length=1; fallback to code like "M1"; else first duration */
+/** Find monthly duration: unit=month & length=1; fallback ke code "M1"; else first duration */
 function findMonthlyDurationId(durations: ProductDetail["durations"]) {
-  const exact = durations.find(
-    (d: ProductDetail["durations"][number]) =>
-      d.unit === "month" && d.length === 1
-  );
+  const exact = durations.find((d) => d.unit === "month" && d.length === 1);
   if (exact) return exact.id;
-  const codeM1 = durations.find((d: ProductDetail["durations"][number]) =>
-    (d.code || "").toUpperCase().includes("M1")
-  );
+  const codeM1 = durations.find((d) => (d.code || "").toUpperCase().includes("M1"));
   return codeM1?.id ?? durations[0]?.id ?? null;
 }
 
-/** Bentuk data harga bulanan yang dipilih */
 type PickedMonthlyPrice = {
   price: number;
   discount: number;
@@ -552,64 +565,50 @@ type PickedMonthlyPrice = {
   duration_code: string;
 } | null;
 
-/** Pick price row for monthly duration_id from a package's pricelist */
+/** Pick price row untuk durasi bulanan dari pricelist package */
 function pickMonthlyPrice(
   pricelist: NonNullable<ProductDetail["packages"][number]["pricelist"]>,
   monthlyDurationId: number | null
 ): PickedMonthlyPrice {
   if (!monthlyDurationId) return null;
-  const row: (typeof pricelist)[number] | undefined = pricelist.find(
-    (p: (typeof pricelist)[number]) => p.duration_id === monthlyDurationId
-  );
+  const row = pricelist.find((p) => p.duration_id === monthlyDurationId);
   if (!row) return null;
   const price = Number(row.price || 0);
   const discount = Number(row.discount || 0);
   const final = Math.max(price - discount, 0);
-  // penting: kirim duration_code ke checkout (contohmu pakai DUR-1)
   const duration_code = (row as any).duration_code ?? "M1";
-  return {
-    price,
-    discount,
-    final,
-    duration_id: monthlyDurationId,
-    duration_code,
-  };
+  return { price, discount, final, duration_id: monthlyDurationId, duration_code };
 }
 
-/** Map feature_code -> human label (name) */
+/** Map feature_code -> label */
 function buildFeatureMap(features: ProductDetail["features"]) {
   const map = new Map<string, string>();
-  for (const f of features as ProductDetail["features"]) {
-    map.set(f.feature_code, f.name ?? f.feature_code);
-  }
+  for (const f of features) map.set(f.feature_code, f.name ?? f.feature_code);
   return map;
 }
 
-/** Enabled feature codes for a specific package (item_type === "feature") */
+/** Enabled feature codes by package */
 function getEnabledFeatureCodesForPackage(
   pkgId: number,
   matrix: ProductDetail["package_matrix"]
 ) {
-  return (matrix as ProductDetail["package_matrix"])
-    .filter(
-      (m: ProductDetail["package_matrix"][number]) =>
-        m.package_id === pkgId && m.item_type === "feature" && m.enabled
-    )
-    .map((m: ProductDetail["package_matrix"][number]) => m.item_id);
+  return matrix
+    .filter((m) => m.package_id === pkgId && m.item_type === "feature" && m.enabled)
+    .map((m) => m.item_id);
 }
 
-/** Union of all feature codes that appear in enabled matrix rows for listed packages */
+/** Union semua feature codes yang muncul di package matrix terpilih */
 function getAllFeatureCodes(
   pkgs: ProductDetail["packages"],
   matrix: ProductDetail["package_matrix"]
 ) {
   const pkgIds = new Set<number>();
-  for (const p of pkgs as ProductDetail["packages"]) {
+  for (const p of pkgs) {
     const pid = p.pricelist?.[0]?.package_id as number | undefined;
     if (pid != null) pkgIds.add(pid);
   }
   const set = new Set<string>();
-  for (const m of matrix as ProductDetail["package_matrix"]) {
+  for (const m of matrix) {
     if (m.item_type !== "feature" || !m.enabled) continue;
     if (!pkgIds.has(m.package_id)) continue;
     set.add(m.item_id);
@@ -625,39 +624,65 @@ export default async function PricingPage({
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  // ===== Ambil locale & kurs dari cookie (sekali di server) =====
-  const cookieStore = await cookies();
-  const localeCookie = cookieStore.get("locale")?.value;
-  const locale: Lang = localeCookie === "en" ? "en" : "id";
+  // ===== Ambil bahasa & kurs dari cookie yang sama dengan LanguageSwitcher =====
+  const locale = await readLangFromCookies();       // <-- pakai agile.lang / lang
+  const usdRate = await readUsdRate();
 
-  const usdRateRaw = Number(cookieStore.get("usd_idr")?.value);
-  const usdRate =
-    Number.isFinite(usdRateRaw) && usdRateRaw > 0 ? usdRateRaw : 15500;
+  const UI = {
+    en: {
+      heroSubtitle:
+        "Choose a monthly plan that fits you—instant activation, no hidden fees.",
+      mostPopular: "Most Popular",
+      featureComparison: "Feature Comparison",
+      featureSubtitle: "See what’s included in each plan.",
+      featureCol: "Feature",
+      included: "Included",
+      viewProductDetails: "View Product Details",
+      finalCtaTitle: (name: string) => `Ready to use ${name}?`,
+      finalCtaSubtitle:
+        "Pick your monthly plan, activate instantly, and streamline billing & reports today.",
+      getStarted: "Get Started",
+      talkToSales: "Talk to Sales",
+      noHiddenFees: "No hidden fees",
+      instantActivation: "Instant activation",
+      prioritySupport: "Priority support",
+    },
+    id: {
+      heroSubtitle:
+        "Pilih paket bulanan yang pas—aktivasi instan, tanpa biaya tersembunyi.",
+      mostPopular: "Paling Populer",
+      featureComparison: "Perbandingan Fitur",
+      featureSubtitle: "Lihat apa saja yang termasuk di tiap paket.",
+      featureCol: "Fitur",
+      included: "Termasuk",
+      viewProductDetails: "Lihat Detail Produk",
+      finalCtaTitle: (name: string) => `Siap pakai ${name}?`,
+      finalCtaSubtitle:
+        "Pilih paket bulananmu, aktifkan instan, dan sederhanakan tagihan & laporan hari ini.",
+      getStarted: "Mulai Sekarang",
+      talkToSales: "Hubungi Sales",
+      noHiddenFees: "Tanpa biaya tersembunyi",
+      instantActivation: "Aktivasi instan",
+      prioritySupport: "Dukungan prioritas",
+    },
+  } as const;
+  const T = UI[locale];
 
   const productCode = (searchParams?.product as string) || "NATABANYU";
   const data = (await fetchProductDetail(productCode)) as ProductDetail;
 
   const monthlyDurationId = findMonthlyDurationId(data.durations);
-  const monthlyDurationCode =
-    data.durations.find(
-      (d: ProductDetail["durations"][number]) => d.id === monthlyDurationId
-    )?.code ?? "M1";
-
-  // Sort packages by order_number then name
   const pkgsSorted = [...data.packages].sort((a, b) => {
-    if (a.order_number !== b.order_number)
-      return a.order_number - b.order_number;
+    if (a.order_number !== b.order_number) return a.order_number - b.order_number;
     return a.name.localeCompare(b.name);
-  }) as ProductDetail["packages"];
+  });
 
   const featureMap = buildFeatureMap(data.features);
   const allFeatureCodes = getAllFeatureCodes(pkgsSorted, data.package_matrix);
 
-  // default cta paket dan durasi
-  const defaultPkg = pkgsSorted[
-    Math.min(1, Math.max(0, pkgsSorted.length - 1))
-  ] as ProductDetail["packages"][number] | undefined;
-  const defaultMonthly: PickedMonthlyPrice = defaultPkg
+  // default CTA
+  const defaultPkg = pkgsSorted[Math.min(1, Math.max(0, pkgsSorted.length - 1))];
+  const defaultMonthly = defaultPkg
     ? pickMonthlyPrice(defaultPkg.pricelist ?? [], monthlyDurationId)
     : null;
 
@@ -674,8 +699,7 @@ export default async function PricingPage({
                 {data.product.product_name} Pricing
               </h1>
               <p className="text-lg sm:text-xl text-slate-600 mt-4">
-                {data.product.description ??
-                  "Choose a monthly plan that fits you—instant activation, no hidden fees."}
+                {data.product.description ?? T.heroSubtitle}
               </p>
             </div>
           </div>
@@ -691,155 +715,133 @@ export default async function PricingPage({
         <section className="py-12 sm:py-16 bg-white">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid gap-8 md:grid-cols-3 max-w-6xl mx-auto">
-              {pkgsSorted.map(
-                (pkg: ProductDetail["packages"][number], idx: number) => {
-                  const pkgId = pkg.pricelist?.[0]?.package_id as
-                    | number
-                    | undefined;
-                  const monthly = pickMonthlyPrice(
-                    pkg.pricelist ?? [],
-                    monthlyDurationId
+              {pkgsSorted.map((pkg, idx) => {
+                const pkgId = pkg.pricelist?.[0]?.package_id as number | undefined;
+                const monthly = pickMonthlyPrice(pkg.pricelist ?? [], monthlyDurationId);
+
+                const enabledCodes =
+                  pkgId != null ? getEnabledFeatureCodesForPackage(pkgId, data.package_matrix) : [];
+                const enabledLabels = enabledCodes
+                  .map((c) => featureMap.get(c) ?? c)
+                  .filter(Boolean) as string[];
+
+                const nameLc = pkg.name.toLowerCase();
+                const popular = idx === 1 || nameLc.includes("premium");
+
+                // Harga tampil sesuai locale
+                const priceBlock =
+                  monthly &&
+                  formatPriceFromIDR(
+                    normalizePriceToNumber(monthly.final),
+                    locale,
+                    usdRate
                   );
+                const discountText =
+                  monthly &&
+                  Number(monthly.discount) > 0 &&
+                  formatPriceFromIDR(
+                    normalizePriceToNumber(monthly.discount),
+                    locale,
+                    usdRate
+                  ).priceText;
 
-                  const enabledCodes =
-                    pkgId != null
-                      ? getEnabledFeatureCodesForPackage(
-                          pkgId,
-                          data.package_matrix
-                        )
-                      : [];
-                  const enabledLabels = enabledCodes
-                    .map((c: string) => featureMap.get(c) ?? c)
-                    .filter(Boolean) as string[];
+                return (
+                  <div
+                    key={pkg.package_code}
+                    className={`relative h-full flex flex-col border rounded-2xl bg-white transition-all duration-300 hover:shadow-lg ${
+                      popular ? "border-blue-600 shadow-xl scale-[1.02]" : "border-slate-200"
+                    }`}
+                  >
+                    {popular && (
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                        <Badge className="bg-gradient-to-r from-blue-600 to-violet-600 text-white px-4 py-1 shadow">
+                          {T.mostPopular}
+                        </Badge>
+                      </div>
+                    )}
 
-                  // Heuristic: mark middle or "premium" as popular
-                  const nameLc = pkg.name.toLowerCase();
-                  const popular = idx === 1 || nameLc.includes("premium");
+                    <div className="p-6 pb-3 text-center">
+                      <h3 className="text-2xl font-bold text-slate-900">{pkg.name}</h3>
 
-                  // ===== Tampilkan harga sesuai locale =====
-                  const priceBlock =
-                    monthly &&
-                    formatPriceFromIDR(
-                      normalizePriceToNumber(monthly.final),
-                      locale,
-                      usdRate
-                    );
-                  const discountText =
-                    monthly &&
-                    Number(monthly.discount) > 0 &&
-                    formatPriceFromIDR(
-                      normalizePriceToNumber(monthly.discount),
-                      locale,
-                      usdRate
-                    ).priceText;
+                      <div className="flex items-baseline justify-center gap-1 mt-3">
+                        <span className="text-4xl font-extrabold text-slate-900">
+                          {priceBlock ? priceBlock.priceText : "—"}
+                        </span>
+                        <span className="text-slate-600">
+                          {priceBlock ? priceBlock.periodText : ""}
+                        </span>
+                      </div>
 
-                  return (
-                    <div
-                      key={pkg.package_code}
-                      className={`relative h-full flex flex-col border rounded-2xl bg-white transition-all duration-300 hover:shadow-lg ${
-                        popular
-                          ? "border-blue-600 shadow-xl scale-[1.02]"
-                          : "border-slate-200"
-                      }`}
-                    >
-                      {popular && (
-                        <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                          <Badge className="bg-gradient-to-r from-blue-600 to-violet-600 text-white px-4 py-1 shadow">
-                            Most Popular
-                          </Badge>
-                        </div>
-                      )}
+                      <p className="mt-2 text-slate-600">{pkg.description ?? ""}</p>
 
-                      <div className="p-6 pb-3 text-center">
-                        <h3 className="text-2xl font-bold text-slate-900">
-                          {pkg.name}
-                        </h3>
-
-                        <div className="flex items-baseline justify-center gap-1 mt-3">
-                          <span className="text-4xl font-extrabold text-slate-900">
-                            {priceBlock ? priceBlock.priceText : "—"}
-                          </span>
-                          <span className="text-slate-600">
-                            {priceBlock ? priceBlock.periodText : ""}
-                          </span>
-                        </div>
-
-                        <p className="mt-2 text-slate-600">
-                          {pkg.description ?? ""}
+                      {monthly && Number(monthly.discount) > 0 && (
+                        <p className="mt-1 text-xs text-emerald-600">
+                          Discount {discountText} applied
                         </p>
+                      )}
+                    </div>
 
-                        {monthly && Number(monthly.discount) > 0 && (
-                          <p className="mt-1 text-xs text-emerald-600">
-                            Discount {discountText} applied
-                          </p>
+                    <div className="px-6 pt-0 pb-6 flex flex-col flex-1">
+                      <ul className="space-y-3 mb-6">
+                        {enabledLabels.slice(0, 7).map((label) => (
+                          <li key={label} className="flex items-center gap-3">
+                            <Check className="h-5 w-5 text-emerald-600" />
+                            <span className="text-slate-700">{label}</span>
+                          </li>
+                        ))}
+                        {enabledLabels.length > 7 && (
+                          <li className="text-sm text-slate-500">
+                            + {enabledLabels.length - 7} more features
+                          </li>
+                        )}
+                      </ul>
+
+                      <div className="mt-auto">
+                        {monthly && (
+                          <Link
+                            href={{
+                              pathname: "/checkout",
+                              query: {
+                                product: data.product.product_code,
+                                package: pkg.package_code,
+                                duration: monthly.duration_code, // DUR-*
+                                price: String(Math.round(monthly.final)), // tetap IDR
+                              },
+                            }}
+                          >
+                            <Button
+                              size="lg"
+                              className={`w-full ${
+                                popular
+                                  ? "bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90"
+                                  : "bg-slate-900 hover:bg-slate-800"
+                              } text-white`}
+                            >
+                              {locale === "id" ? "Pilih" : "Choose"} {pkg.name}
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </Link>
                         )}
                       </div>
-
-                      <div className="px-6 pt-0 pb-6 flex flex-col flex-1">
-                        <ul className="space-y-3 mb-6">
-                          {enabledLabels.slice(0, 7).map((label: string) => (
-                            <li key={label} className="flex items-center gap-3">
-                              <Check className="h-5 w-5 text-emerald-600" />
-                              <span className="text-slate-700">{label}</span>
-                            </li>
-                          ))}
-                          {enabledLabels.length > 7 && (
-                            <li className="text-sm text-slate-500">
-                              + {enabledLabels.length - 7} more features
-                            </li>
-                          )}
-                        </ul>
-
-                        <div className="mt-auto">
-                          {monthly && (
-                            <Link
-                              href={{
-                                pathname: "/checkout",
-                                query: {
-                                  product: data.product.product_code,
-                                  package: pkg.package_code,
-                                  duration: monthly.duration_code, // <-- pakai DUR-*
-                                  // kirim harga final (IDR) ke checkout; tampilan tetap menyesuaikan locale
-                                  price: String(Math.round(monthly.final)),
-                                },
-                              }}
-                            >
-                              <Button
-                                size="lg"
-                                className={`w-full ${
-                                  popular
-                                    ? "bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-90"
-                                    : "bg-slate-900 hover:bg-slate-800"
-                                } text-white`}
-                              >
-                                Choose {pkg.name}
-                                <ArrowRight className="ml-2 h-4 w-4" />
-                              </Button>
-                            </Link>
-                          )}
-                        </div>
-                      </div>
                     </div>
-                  );
-                }
-              )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Mini perks row */}
             <div className="grid gap-4 sm:grid-cols-3 mt-10 max-w-5xl mx-auto">
               <div className="flex items-center gap-3 justify-center rounded-lg border bg-slate-50 p-3">
                 <Shield className="h-5 w-5 text-blue-600" />
-                <span className="text-sm text-slate-700">No hidden fees</span>
+                <span className="text-sm text-slate-700">{T.noHiddenFees}</span>
               </div>
               <div className="flex items-center gap-3 justify-center rounded-lg border bg-slate-50 p-3">
                 <Zap className="h-5 w-5 text-violet-600" />
-                <span className="text-sm text-slate-700">
-                  Instant activation
-                </span>
+                <span className="text-sm text-slate-700">{T.instantActivation}</span>
               </div>
               <div className="flex items-center gap-3 justify-center rounded-lg border bg-slate-50 p-3">
                 <Headphones className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm text-slate-700">Priority support</span>
+                <span className="text-sm text-slate-700">{T.prioritySupport}</span>
               </div>
             </div>
           </div>
@@ -850,11 +852,9 @@ export default async function PricingPage({
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-8">
               <h2 className="font-sans font-bold text-3xl text-slate-900">
-                Feature Comparison
+                {T.featureComparison}
               </h2>
-              <p className="text-slate-600 mt-2">
-                See what’s included in each plan.
-              </p>
+              <p className="text-slate-600 mt-2">{T.featureSubtitle}</p>
             </div>
 
             <div className="overflow-x-auto">
@@ -862,9 +862,9 @@ export default async function PricingPage({
                 <thead>
                   <tr className="bg-gradient-to-r from-blue-50 to-violet-50">
                     <th className="text-left text-slate-900 font-semibold p-4 border-b border-slate-200">
-                      Feature
+                      {T.featureCol}
                     </th>
-                    {pkgsSorted.map((p: ProductDetail["packages"][number]) => (
+                    {pkgsSorted.map((p) => (
                       <th
                         key={p.package_code}
                         className="text-left text-slate-900 font-semibold p-4 border-b border-slate-200"
@@ -875,46 +875,37 @@ export default async function PricingPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {allFeatureCodes.map((code: string) => {
+                  {allFeatureCodes.map((code) => {
                     const label = featureMap.get(code) ?? code;
                     return (
                       <tr key={code} className="hover:bg-slate-50">
                         <td className="p-4 text-slate-700 border-b border-slate-200">
                           {label}
                         </td>
-                        {pkgsSorted.map(
-                          (p: ProductDetail["packages"][number]) => {
-                            const pid = p.pricelist?.[0]?.package_id as
-                              | number
-                              | undefined;
-                            const included =
-                              pid != null &&
-                              data.package_matrix.some(
-                                (m: ProductDetail["package_matrix"][number]) =>
-                                  m.package_id === pid &&
-                                  m.item_type === "feature" &&
-                                  m.enabled &&
-                                  m.item_id === code
-                              );
-                            return (
-                              <td
-                                key={`${p.package_code}-${code}`}
-                                className="p-4 border-b border-slate-200"
-                              >
-                                {included ? (
-                                  <div className="inline-flex items-center gap-2 text-emerald-600 font-medium">
-                                    <Check className="h-5 w-5" />
-                                    <span className="text-sm">Included</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-sm text-slate-400">
-                                    —
-                                  </span>
-                                )}
-                              </td>
+                        {pkgsSorted.map((p) => {
+                          const pid = p.pricelist?.[0]?.package_id as number | undefined;
+                          const included =
+                            pid != null &&
+                            data.package_matrix.some(
+                              (m) =>
+                                m.package_id === pid &&
+                                m.item_type === "feature" &&
+                                m.enabled &&
+                                m.item_id === code
                             );
-                          }
-                        )}
+                          return (
+                            <td key={`${p.package_code}-${code}`} className="p-4 border-b border-slate-200">
+                              {included ? (
+                                <div className="inline-flex items-center gap-2 text-emerald-600 font-medium">
+                                  <Check className="h-5 w-5" />
+                                  <span className="text-sm">{T.included}</span>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-slate-400">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}
@@ -929,7 +920,7 @@ export default async function PricingPage({
                   size="lg"
                   className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
                 >
-                  View Product Details
+                  {T.viewProductDetails}
                 </Button>
               </Link>
             </div>
@@ -947,12 +938,11 @@ export default async function PricingPage({
               </div>
 
               <h2 className="font-sans font-bold text-3xl sm:text-4xl lg:text-5xl text-white mb-6 leading-tight">
-                Ready to use {data.product.product_name}?
+                {T.finalCtaTitle(data.product.product_name)}
               </h2>
 
               <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto leading-relaxed">
-                Pick your monthly plan, activate instantly, and streamline
-                billing & reports today.
+                {T.finalCtaSubtitle}
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -965,8 +955,7 @@ export default async function PricingPage({
                             product: data.product.product_code,
                             package: defaultPkg.package_code,
                             duration: defaultMonthly.duration_code,
-                            // kirim harga final (IDR) ke checkout; tampilan tetap menyesuaikan locale
-                            price: String(Math.round(defaultMonthly.final)),
+                            price: String(Math.round(defaultMonthly.final)), // tetap IDR
                           },
                         }
                       : `/signup?product=${data.product.product_code}`
@@ -976,7 +965,7 @@ export default async function PricingPage({
                     size="lg"
                     className="bg-white text-blue-600 hover:bg-blue-50 text-lg px-8 py-4 shadow-xl font-semibold"
                   >
-                    Get Started
+                    {T.getStarted}
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </Link>
@@ -986,7 +975,7 @@ export default async function PricingPage({
                     size="lg"
                     className="border-white text-white hover:bg-white/10 text-lg px-8 py-4 bg-transparent"
                   >
-                    Talk to Sales
+                    {T.talkToSales}
                   </Button>
                 </Link>
               </div>
@@ -994,11 +983,11 @@ export default async function PricingPage({
               <div className="mt-8 flex items-center justify-center gap-8 text-blue-100 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full" />
-                  <span>No setup fees</span>
+                  <span>{T.noHiddenFees}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full" />
-                  <span>24/7 support</span>
+                  <span>{T.prioritySupport}</span>
                 </div>
               </div>
             </div>

@@ -4,6 +4,7 @@ const API_BASE = "http://localhost:8001/api/";
 /**
  * Customer AUTH.
  */
+export const TRANSLATE_API = `${API_BASE}translate-batch`;
 const TOKEN_KEY = "customer_access_token";
 
 // Instance untuk BACKEND Laravel
@@ -638,6 +639,66 @@ export async function downloadInvoice(orderId: string): Promise<Blob> {
 
 // Agile Store Setting
 // lib/api.ts (atau di file yang sama dengan cuplikanmu)
+// export type AgileStoreSectionResp<T = any> = {
+//   id?: number;
+//   key: string;
+//   name?: string | null;
+//   enabled?: boolean;
+//   order?: number;
+//   theme?: Record<string, any> | null;
+//   content?: T | null;
+//   items?: any[] | null;
+// };
+
+// // Helper kecil untuk aman pada berbagai bentuk payload
+// function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
+//   const root = resp?.data ?? resp ?? {};
+//   const content =
+//     root.content ?? root.payload?.content ?? root.data?.content ?? null;
+//   const items = root.items ?? root.content?.items ?? root.data?.items ?? null;
+
+//   return {
+//     id: root.id,
+//     key: root.key ?? key,
+//     name: root.name ?? null,
+//     enabled: root.enabled ?? true,
+//     order: root.order,
+//     theme: root.theme ?? null,
+//     content,
+//     items,
+//   };
+// }
+
+// export const AgileStoreAPI = {
+//   async getSection<T = any>(
+//     key: string,
+//     init?: RequestInit
+//   ): Promise<AgileStoreSectionResp<T> | null> {
+//     // ⛔ Lindungi agar tidak memanggil dirinya sendiri
+//     if (typeof window === "undefined" && key === "footer") {
+//       const stack = new Error().stack || "";
+//       if (stack.includes("footer")) {
+//         console.warn("[AgileStoreAPI] Skipping self-fetch for footer");
+//         return null;
+//       }
+//     }
+
+//     const res = await fetch(
+//       `${API_BASE}agile-store/sections/${encodeURIComponent(key)}`,
+//       {
+//         cache: "no-store", // ⬅️ penting: jangan ke-cache
+//         headers: { Accept: "application/json" },
+//         ...(init ?? {}),
+//       }
+//     );
+//     if (!res.ok) return null;
+//     const json = await res.json();
+//     return unwrapSection(json, key);
+//   },
+// };
+
+// lib/api.ts
+
 export type AgileStoreSectionResp<T = any> = {
   id?: number;
   key: string;
@@ -646,15 +707,41 @@ export type AgileStoreSectionResp<T = any> = {
   order?: number;
   theme?: Record<string, any> | null;
   content?: T | null;
+  /** ⬇️ tambahkan: konten Inggris kalau ada */
+  content_en?: T | null;
   items?: any[] | null;
+  /** ⬇️ opsional: items_en kalau API punya */
+  items_en?: any[] | null;
 };
 
 // Helper kecil untuk aman pada berbagai bentuk payload
 function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
   const root = resp?.data ?? resp ?? {};
+
   const content =
     root.content ?? root.payload?.content ?? root.data?.content ?? null;
-  const items = root.items ?? root.content?.items ?? root.data?.items ?? null;
+
+  // ⬇️ baca variasi nama "content_en"
+  const content_en =
+    root.content_en ??
+    root.payload?.content_en ??
+    root.data?.content_en ??
+    root.contentEn ??
+    null;
+
+  const items =
+    root.items ??
+    root.content?.items ??
+    root.data?.items ??
+    (Array.isArray(content?.items) ? content.items : null) ??
+    null;
+
+  const items_en =
+    root.items_en ??
+    root.content_en?.items ??
+    root.data?.items_en ??
+    (Array.isArray(content_en?.items) ? content_en.items : null) ??
+    null;
 
   return {
     id: root.id,
@@ -664,8 +751,35 @@ function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
     order: root.order,
     theme: root.theme ?? null,
     content,
+    content_en,
     items,
+    items_en,
   };
+}
+
+/** Pilih konten per-locale dengan fallback rapi */
+export function pickLocale<T = any>(
+  section: AgileStoreSectionResp<T> | null,
+  locale: "id" | "en"
+): { content: T | null; items: any[] | null } {
+  if (!section) return { content: null, items: null };
+  if (locale === "en") {
+    const c =
+      (section as any).content_en ??
+      (section.content && (section.content as any).en) ??
+      null;
+    const it = section.items_en ?? ((c && (c as any).items) || null) ?? null;
+    return {
+      content: (c as T) ?? section.content ?? null,
+      items: it ?? section.items ?? null,
+    };
+  }
+  // locale id
+  const it =
+    section.items ??
+    ((section.content && (section.content as any).items) || null) ??
+    null;
+  return { content: section.content ?? null, items: it };
 }
 
 export const AgileStoreAPI = {
@@ -673,7 +787,6 @@ export const AgileStoreAPI = {
     key: string,
     init?: RequestInit
   ): Promise<AgileStoreSectionResp<T> | null> {
-    // ⛔ Lindungi agar tidak memanggil dirinya sendiri
     if (typeof window === "undefined" && key === "footer") {
       const stack = new Error().stack || "";
       if (stack.includes("footer")) {
@@ -685,7 +798,7 @@ export const AgileStoreAPI = {
     const res = await fetch(
       `${API_BASE}agile-store/sections/${encodeURIComponent(key)}`,
       {
-        cache: "no-store", // ⬅️ penting: jangan ke-cache
+        cache: "no-store",
         headers: { Accept: "application/json" },
         ...(init ?? {}),
       }
@@ -695,6 +808,9 @@ export const AgileStoreAPI = {
     return unwrapSection(json, key);
   },
 };
+
+// ============ Search helper (tetap) ============
+// ... (tidak berubah)
 
 // ============ Search helper (client uses this) ============
 export type ProductLite = {
