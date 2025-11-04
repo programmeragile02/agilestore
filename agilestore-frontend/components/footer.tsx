@@ -1,4 +1,3 @@
-// // components/footer.tsx
 // import Link from "next/link";
 // import { Button } from "@/components/ui/button";
 // import { Input } from "@/components/ui/input";
@@ -11,12 +10,14 @@
 //   Phone,
 //   MapPin,
 // } from "lucide-react";
-// import { AgileStoreAPI } from "@/lib/api";
+// import { AgileStoreAPI, pickLocale } from "@/lib/api";
 // import { cookies } from "next/headers";
 
 // type Lang = "id" | "en";
 
-// // Fallback jika content belum diisi
+// /* =========================
+//    Fallback statis
+// ========================= */
 // const FALLBACK = {
 //   brand: "Agile Store",
 //   contact: {
@@ -30,8 +31,36 @@
 //   newsletterLabel: "Enter your email",
 // };
 
-// type FooterContent = typeof FALLBACK;
+// const T = {
+//   en: {
+//     quickLinks: "Quick Links",
+//     contactInfo: "Contact Info",
+//     stayUpdated: "Stay Updated",
+//     newsletterDesc:
+//       "Subscribe to our newsletter for the latest updates and exclusive offers.",
+//     subscribe: "Subscribe",
+//     privacy: "Privacy Policy",
+//     terms: "Terms of Service",
+//     cookie: "Cookie Policy",
+//     allRights: "All rights reserved.",
+//   },
+//   id: {
+//     quickLinks: "Tautan Cepat",
+//     contactInfo: "Kontak",
+//     stayUpdated: "Tetap Terupdate",
+//     newsletterDesc:
+//       "Berlangganan newsletter kami untuk update terbaru dan penawaran eksklusif.",
+//     subscribe: "Berlangganan",
+//     privacy: "Kebijakan Privasi",
+//     terms: "Syarat Layanan",
+//     cookie: "Kebijakan Cookie",
+//     allRights: "Hak cipta dilindungi.",
+//   },
+// } as const;
 
+// /* =========================
+//    Helpers
+// ========================= */
 // async function readLang(): Promise<Lang> {
 //   const maybe = cookies() as any;
 //   const store = typeof maybe?.then === "function" ? await maybe : maybe;
@@ -45,7 +74,7 @@
 
 // // mapping label → href yang aman
 // function linkHref(label: string) {
-//   const key = label.trim().toLowerCase();
+//   const key = (label || "").trim().toLowerCase();
 //   if (key.includes("product") || key.includes("produk")) return "/products";
 //   if (key.includes("pricing") || key.includes("harga")) return "/pricing";
 //   if (key.includes("about") || key.includes("tentang")) return "/about";
@@ -59,68 +88,98 @@
 //   return `/${key.replace(/\s+/g, "-")}`;
 // }
 
-// async function getFooterContent(lang: Lang): Promise<FooterContent> {
-//   const sec = await AgileStoreAPI.getSection<any>("footer");
+// // normalisasi array quick links dari berbagai bentuk
+// function normalizeQuickLinks(src: any): string[] {
+//   if (!src) return [];
+//   // langsung array string
+//   if (Array.isArray(src) && src.every((x) => typeof x === "string")) {
+//     return src as string[];
+//   }
+//   // array objek { label|name|title }
+//   const arr =
+//     (Array.isArray(src) && src) ||
+//     (Array.isArray(src?.items) && src.items) ||
+//     [];
+//   const labels = arr
+//     .map((it: any) => {
+//       if (typeof it === "string") return it;
+//       return it?.label ?? it?.name ?? it?.title ?? null;
+//     })
+//     .filter(Boolean);
+//   return labels.length ? labels : [];
+// }
 
-//   // Pilih payload sesuai bahasa (berapa pun struktur yang ada)
-//   const contentEn =
-//     sec?.content_en ?? sec?.content?.en ?? sec?.content?.["en"] ?? null;
+// /* =========================
+//    Fetch footer + contact with locale
+// ========================= */
+// async function getFooterContent(lang: Lang) {
+//   const [footerSec, contactSec] = await Promise.all([
+//     AgileStoreAPI.getSection<any>("footer"),
+//     AgileStoreAPI.getSection<any>("contact"),
+//   ]);
 
-//   const base: FooterContent =
-//     lang === "en" && contentEn
-//       ? (contentEn as FooterContent)
-//       : (sec?.content as FooterContent) ?? FALLBACK;
+//   // pilih locale (AgileStoreAPI sudah parse content_en kalau string JSON)
+//   const footer = pickLocale<any>(footerSec, lang).content ?? {};
+//   const contact = pickLocale<any>(contactSec, lang).content ?? {};
+
+//   // brand/desc/newsletter
+//   const brand = footer?.brand ?? footer?.title ?? FALLBACK.brand;
+
+//   const description =
+//     footer?.description ?? footer?.subtitle ?? FALLBACK.description;
+
+//   const newsletterLabel =
+//     footer?.newsletterLabel ??
+//     footer?.newsletter_label ??
+//     FALLBACK.newsletterLabel;
+
+//   // quick links dari footer: quickLinks | links | items[]
+//   const quickLinks =
+//     normalizeQuickLinks(footer?.quickLinks) ||
+//     normalizeQuickLinks(footer?.links) ||
+//     normalizeQuickLinks(footer?.items) ||
+//     FALLBACK.quickLinks;
+
+//   // contact: prioritaskan section "contact" (sesuai permintaan)
+//   const contactEmail =
+//     contact?.email ??
+//     contact?.contact?.email ??
+//     footer?.contact?.email ??
+//     FALLBACK.contact.email;
+
+//   const contactPhone =
+//     contact?.phone ??
+//     contact?.contact?.phone ??
+//     footer?.contact?.phone ??
+//     FALLBACK.contact.phone;
+
+//   const contactAddress =
+//     contact?.address ??
+//     contact?.contact?.address ??
+//     footer?.contact?.address ??
+//     FALLBACK.contact.address;
 
 //   return {
-//     brand: base.brand ?? FALLBACK.brand,
+//     brand,
+//     description,
+//     newsletterLabel,
+//     quickLinks,
 //     contact: {
-//       email: base.contact?.email ?? FALLBACK.contact.email,
-//       phone: base.contact?.phone ?? FALLBACK.contact.phone,
-//       address: base.contact?.address ?? FALLBACK.contact.address,
+//       email: contactEmail,
+//       phone: contactPhone,
+//       address: contactAddress,
 //     },
-//     quickLinks:
-//       Array.isArray(base.quickLinks) && base.quickLinks.length
-//         ? base.quickLinks
-//         : FALLBACK.quickLinks,
-//     description: base.description ?? FALLBACK.description,
-//     newsletterLabel: base.newsletterLabel ?? FALLBACK.newsletterLabel,
 //   };
 // }
 
+// /* =========================
+//    Component
+// ========================= */
 // async function Footer() {
 //   const lang = await readLang();
 //   const data = await getFooterContent(lang);
-//   const year = new Date().getFullYear();
-
-//   // Label UI statis bilingual
-//   const T = {
-//     en: {
-//       quickLinks: "Quick Links",
-//       contactInfo: "Contact Info",
-//       stayUpdated: "Stay Updated",
-//       newsletterDesc:
-//         "Subscribe to our newsletter for the latest updates and exclusive offers.",
-//       subscribe: "Subscribe",
-//       privacy: "Privacy Policy",
-//       terms: "Terms of Service",
-//       cookie: "Cookie Policy",
-//       allRights: "All rights reserved.",
-//     },
-//     id: {
-//       quickLinks: "Tautan Cepat",
-//       contactInfo: "Kontak",
-//       stayUpdated: "Tetap Terupdate",
-//       newsletterDesc:
-//         "Berlangganan newsletter kami untuk update terbaru dan penawaran eksklusif.",
-//       subscribe: "Berlangganan",
-//       privacy: "Kebijakan Privasi",
-//       terms: "Syarat Layanan",
-//       cookie: "Kebijakan Cookie",
-//       allRights: "Hak cipta dilindungi.",
-//     },
-//   } as const;
-
 //   const L = T[lang];
+//   const year = new Date().getFullYear();
 
 //   return (
 //     <footer className="bg-foreground text-background">
@@ -245,7 +304,7 @@
 //         <div className="border-t border-background/20 mt-12 pt-8">
 //           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
 //             <p className="text-background/80 text-sm">
-//               © {year} {data.brand}. {L.allRights}
+//               © {year} {data.brand}. {T[lang].allRights}
 //             </p>
 //             <div className="flex space-x-6 text-sm">
 //               <Link
@@ -277,7 +336,9 @@
 // export { Footer };
 // export default Footer;
 
-// components/footer.tsx
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -291,7 +352,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { AgileStoreAPI, pickLocale } from "@/lib/api";
-import { cookies } from "next/headers";
+import { useLanguage } from "@/components/LanguageProvider";
 
 type Lang = "id" | "en";
 
@@ -341,18 +402,6 @@ const T = {
 /* =========================
    Helpers
 ========================= */
-async function readLang(): Promise<Lang> {
-  const maybe = cookies() as any;
-  const store = typeof maybe?.then === "function" ? await maybe : maybe;
-  const raw =
-    store.get("agile.lang")?.value ??
-    store.get("agile_lang")?.value ??
-    store.get("lang")?.value ??
-    "";
-  return raw === "en" ? "en" : "id";
-}
-
-// mapping label → href yang aman
 function linkHref(label: string) {
   const key = (label || "").trim().toLowerCase();
   if (key.includes("product") || key.includes("produk")) return "/products";
@@ -368,14 +417,11 @@ function linkHref(label: string) {
   return `/${key.replace(/\s+/g, "-")}`;
 }
 
-// normalisasi array quick links dari berbagai bentuk
 function normalizeQuickLinks(src: any): string[] {
   if (!src) return [];
-  // langsung array string
   if (Array.isArray(src) && src.every((x) => typeof x === "string")) {
     return src as string[];
   }
-  // array objek { label|name|title }
   const arr =
     (Array.isArray(src) && src) ||
     (Array.isArray(src?.items) && src.items) ||
@@ -386,25 +432,30 @@ function normalizeQuickLinks(src: any): string[] {
       return it?.label ?? it?.name ?? it?.title ?? null;
     })
     .filter(Boolean);
-  return labels.length ? labels : [];
+  return labels.length ? (labels as string[]) : [];
 }
 
 /* =========================
-   Fetch footer + contact with locale
+   Types & fetcher (client)
 ========================= */
-async function getFooterContent(lang: Lang) {
+type FooterData = {
+  brand: string;
+  description: string;
+  newsletterLabel: string;
+  quickLinks: string[];
+  contact: { email: string; phone: string; address: string };
+};
+
+async function fetchFooterData(lang: Lang): Promise<FooterData> {
   const [footerSec, contactSec] = await Promise.all([
     AgileStoreAPI.getSection<any>("footer"),
     AgileStoreAPI.getSection<any>("contact"),
   ]);
 
-  // pilih locale (AgileStoreAPI sudah parse content_en kalau string JSON)
   const footer = pickLocale<any>(footerSec, lang).content ?? {};
   const contact = pickLocale<any>(contactSec, lang).content ?? {};
 
-  // brand/desc/newsletter
   const brand = footer?.brand ?? footer?.title ?? FALLBACK.brand;
-
   const description =
     footer?.description ?? footer?.subtitle ?? FALLBACK.description;
 
@@ -413,14 +464,13 @@ async function getFooterContent(lang: Lang) {
     footer?.newsletter_label ??
     FALLBACK.newsletterLabel;
 
-  // quick links dari footer: quickLinks | links | items[]
   const quickLinks =
     normalizeQuickLinks(footer?.quickLinks) ||
     normalizeQuickLinks(footer?.links) ||
     normalizeQuickLinks(footer?.items) ||
     FALLBACK.quickLinks;
 
-  // contact: prioritaskan section "contact" (sesuai permintaan)
+  // ambil email & phone dari section "contact" (sesuai permintaan)
   const contactEmail =
     contact?.email ??
     contact?.contact?.email ??
@@ -453,13 +503,42 @@ async function getFooterContent(lang: Lang) {
 }
 
 /* =========================
-   Component
+   Component (Client)
 ========================= */
-async function Footer() {
-  const lang = await readLang();
-  const data = await getFooterContent(lang);
-  const L = T[lang];
-  const year = new Date().getFullYear();
+function Footer() {
+  const { lang } = useLanguage(); // "id" | "en"
+  const L = T[lang as Lang] ?? T.id;
+  const [data, setData] = useState<FooterData>(() => ({
+    brand: FALLBACK.brand,
+    description: FALLBACK.description,
+    newsletterLabel: FALLBACK.newsletterLabel,
+    quickLinks: FALLBACK.quickLinks,
+    contact: FALLBACK.contact,
+  }));
+
+  useEffect(() => {
+    let ok = true;
+    fetchFooterData((lang as Lang) ?? "id")
+      .then((d) => {
+        if (ok) setData(d);
+      })
+      .catch(() => {
+        // fallback diam-diam jika error
+        if (ok)
+          setData({
+            brand: FALLBACK.brand,
+            description: FALLBACK.description,
+            newsletterLabel: FALLBACK.newsletterLabel,
+            quickLinks: FALLBACK.quickLinks,
+            contact: FALLBACK.contact,
+          });
+      });
+    return () => {
+      ok = false;
+    };
+  }, [lang]);
+
+  const year = useMemo(() => new Date().getFullYear(), []);
 
   return (
     <footer className="bg-foreground text-background">
@@ -584,26 +663,26 @@ async function Footer() {
         <div className="border-t border-background/20 mt-12 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
             <p className="text-background/80 text-sm">
-              © {year} {data.brand}. {T[lang].allRights}
+              © {year} {data.brand}. {L.allRights}
             </p>
             <div className="flex space-x-6 text-sm">
               <Link
-                href="/privacy"
+                href="#"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                {T[lang].privacy}
+                {L.privacy}
               </Link>
               <Link
-                href="/terms"
+                href="#"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                {T[lang].terms}
+                {L.terms}
               </Link>
               <Link
-                href="/cookies"
+                href="#"
                 className="text-background/80 hover:text-background transition-colors"
               >
-                {T[lang].cookie}
+                {L.cookie}
               </Link>
             </div>
           </div>
