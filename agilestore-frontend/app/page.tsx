@@ -1,4 +1,3 @@
-// // app/page.tsx
 // import Link from "next/link";
 // import { cookies } from "next/headers";
 // import { Header } from "@/components/header";
@@ -21,12 +20,15 @@
 //   Shield,
 //   Headphones,
 // } from "lucide-react";
-// import { AgileStoreAPI } from "@/lib/api";
+// import {
+//   AgileStoreAPI,
+//   pickLocale,
+//   type AgileStoreSectionResp,
+// } from "@/lib/api";
 
 // /* =========================
 //    Locale & Currency Helpers
 // ========================= */
-
 // type Lang = "id" | "en";
 
 // /** Normalisasi angka harga ke number (terima number / "Rp 100.000" / "100,000" / "$79") */
@@ -43,12 +45,11 @@
 // /**
 //  * Pilih & format harga sesuai locale.
 //  * Asumsi: nilai sumber (plan.price/*) adalah **IDR**.
-//  * - locale 'id'  â†’ tampil Rp ... /bulan
-//  * - locale 'en'  â†’ konversi ke USD pakai usdRate (IDR per 1 USD) â†’ $ ... /month
+//  * - locale 'id'  → tampil Rp ... /bulan
+//  * - locale 'en'  → konversi ke USD pakai usdRate (IDR per 1 USD) → $ ... /month
 //  */
 // function resolvePrice(plan: any, locale: Lang, usdRate: number) {
 //   const p = plan?.price;
-
 //   let rawPrice: any =
 //     (p && (typeof p === "object" ? p.monthly ?? p.yearly : p)) ??
 //     plan?.priceMonthly ??
@@ -57,7 +58,7 @@
 //     plan?.price_yearly ??
 //     null;
 
-//   // Normalisasi ke number â†’ dianggap IDR
+//   // Normalisasi ke number → dianggap IDR
 //   let amountIdr = normalizePriceToNumber(rawPrice);
 //   if (amountIdr == null) amountIdr = 0;
 
@@ -66,7 +67,7 @@
 //       style: "currency",
 //       currency: "IDR",
 //       maximumFractionDigits: 0,
-//     }).format(amountIdr); // â†’ "Rp100.000"
+//     }).format(amountIdr);
 //     return { priceText, periodText: "/bulan" };
 //   } else {
 //     const rate = usdRate > 0 ? usdRate : 15500;
@@ -75,7 +76,7 @@
 //       style: "currency",
 //       currency: "USD",
 //       maximumFractionDigits: 0,
-//     }).format(amountUsd); // â†’ "$6"
+//     }).format(amountUsd);
 //     return { priceText, periodText: "/month" };
 //   }
 // }
@@ -83,8 +84,6 @@
 // /* =========================
 //    Fallbacks (UI tidak diubah)
 // ========================= */
-
-// // HERO
 // const FALLBACK_HERO = {
 //   title: "Digital Products to",
 //   highlight: "Grow Your Business",
@@ -100,7 +99,6 @@
 //   ui: { gradientFrom: "blue-600", gradientTo: "violet-600" },
 // };
 
-// // TRUSTED BY
 // const FALLBACK_TRUSTED = {
 //   headline: "Trusted by 100+ businesses and organizations",
 //   items: [
@@ -125,7 +123,6 @@
 //   ],
 // };
 
-// // FEATURED PRODUCTS
 // const FALLBACK_FEATURED = {
 //   title: "Our Products",
 //   subtitle:
@@ -166,7 +163,6 @@
 //   ],
 // };
 
-// // BENEFITS (why)
 // const FALLBACK_BENEFITS = {
 //   title: "Why Agile Store",
 //   subtitle:
@@ -199,7 +195,6 @@
 //   ],
 // };
 
-// // HOW IT WORKS (how)
 // const FALLBACK_HIW = {
 //   title: "How It Works",
 //   subtitle:
@@ -229,7 +224,6 @@
 //   ],
 // };
 
-// // PRICING HIGHLIGHT (pricing)
 // const FALLBACK_PRICING = {
 //   title: "Simple Pricing for Everyone",
 //   subtitle:
@@ -279,7 +273,6 @@
 //   ],
 // };
 
-// // TESTIMONIALS (testimonials)
 // const FALLBACK_TESTIMONIALS = {
 //   title: "What Our Customers Say",
 //   subtitle:
@@ -316,7 +309,6 @@
 //   ],
 // };
 
-// // FINAL CTA (cta)
 // const FALLBACK_FINAL_CTA = {
 //   titleHTML: `Ready to boost your business with <span class="text-yellow-300">Agile Store</span>?`,
 //   subtitle:
@@ -327,7 +319,7 @@
 // };
 
 // /* =========================
-//    Icon mapper (tanpa await import)
+//    Icon mapper
 // ========================= */
 // const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 //   Building2,
@@ -350,10 +342,148 @@
 // }
 
 // /* =========================
-//    Server-side fetch ke Agile Store
-//    (keys: hero, why, how, products, pricing, cta, testimonials)
+//    Normalizers per section (respect locale via pickLocale)
 // ========================= */
-// async function fetchAllSections() {
+// function parseHeroPartsFromTitle(full?: string | null) {
+//   if (!full || typeof full !== "string") return null;
+//   // Heuristik ringan untuk memecah "Digital Products to Grow Your Business, Faster."
+//   const target = "Grow Your Business";
+//   const idx = full.indexOf(target);
+//   if (idx >= 0) {
+//     const before = full.slice(0, idx).trim(); // "Digital Products to"
+//     const after = full.slice(idx + target.length).trim(); // ", Faster." (mungkin tanpa koma)
+//     const trailing = after.startsWith(",") ? after : after ? ", " + after : "";
+//     return { title: before, highlight: target, trailing };
+//   }
+//   // fallback: tidak bisa dipecah
+//   return null;
+// }
+
+// function normalizeHero(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   // Bentuk DB Anda: content.title, content.subtitle, primaryCta (string), secondaryCta (string)
+//   const parts = parseHeroPartsFromTitle(content?.title);
+//   const base = { ...FALLBACK_HERO };
+//   if (parts) {
+//     base.title = parts.title || base.title;
+//     base.highlight = parts.highlight || base.highlight;
+//     base.trailing = parts.trailing || base.trailing;
+//   }
+//   if (content?.subtitle) base.tagline = content.subtitle;
+//   // CTA bisa berupa string; bungkus ke bentuk {label, href}
+//   if (content?.primaryCta)
+//     base.primaryCta = { label: String(content.primaryCta), href: "/products" };
+//   if (content?.secondaryCta)
+//     base.secondaryCta = {
+//       label: String(content.secondaryCta),
+//       href: "/signup",
+//       variant: "outline" as const,
+//     };
+//   return base;
+// }
+
+// function normalizeBenefits(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   return {
+//     title: content?.title ?? FALLBACK_BENEFITS.title,
+//     subtitle: content?.subtitle ?? FALLBACK_BENEFITS.subtitle,
+//     items: content?.items ?? FALLBACK_BENEFITS.items,
+//   };
+// }
+
+// function normalizeHow(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   return {
+//     title: content?.title ?? FALLBACK_HIW.title,
+//     subtitle: content?.subtitle ?? FALLBACK_HIW.subtitle,
+//     steps: content?.steps ?? content?.items ?? FALLBACK_HIW.steps,
+//   };
+// }
+
+// function normalizeProducts(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   const baseItems = content?.items ?? content?.products;
+//   return {
+//     title: content?.title ?? FALLBACK_FEATURED.title,
+//     subtitle: content?.subtitle ?? FALLBACK_FEATURED.subtitle,
+//     products: baseItems ?? FALLBACK_FEATURED.products,
+//   };
+// }
+
+// function normalizePricing(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   return {
+//     title: content?.title ?? FALLBACK_PRICING.title,
+//     subtitle: content?.subtitle ?? FALLBACK_PRICING.subtitle,
+//     plans: content?.plans ?? content?.items ?? FALLBACK_PRICING.plans,
+//   };
+// }
+
+// function normalizeCTA(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   return {
+//     titleHTML:
+//       content?.titleHTML ??
+//       content?.title_html ??
+//       content?.title ??
+//       FALLBACK_FINAL_CTA.titleHTML,
+//     subtitle: content?.subtitle ?? FALLBACK_FINAL_CTA.subtitle,
+//     primary:
+//       typeof content?.primary === "string"
+//         ? { label: content?.primary, href: "/products" }
+//         : content?.primary ?? FALLBACK_FINAL_CTA.primary,
+//     secondary:
+//       typeof content?.secondary === "string"
+//         ? { label: content?.secondary, href: "/contact" }
+//         : content?.secondary ?? FALLBACK_FINAL_CTA.secondary,
+//     bullets: content?.bullets ?? FALLBACK_FINAL_CTA.bullets,
+//   };
+// }
+
+// function normalizeTestimonials(
+//   section: AgileStoreSectionResp<any> | null,
+//   locale: Lang
+// ) {
+//   const { content } = pickLocale<any>(section, locale);
+//   const items = Array.isArray(content?.items)
+//     ? content.items.map((r: any) => ({
+//         name: r.name ?? r.person_name ?? r.title ?? "",
+//         role: r.role ?? r.person_role ?? r.subtitle ?? "",
+//         content: r.content ?? r.quote ?? r.description ?? "",
+//         rating: Number(r.rating ?? 5),
+//         avatar: r.avatar ?? "",
+//       }))
+//     : null;
+//   return {
+//     title: content?.title ?? FALLBACK_TESTIMONIALS.title,
+//     subtitle: content?.subtitle ?? FALLBACK_TESTIMONIALS.subtitle,
+//     autoplayMs: content?.autoplayMs ?? FALLBACK_TESTIMONIALS.autoplayMs,
+//     items: items ?? FALLBACK_TESTIMONIALS.items,
+//   };
+// }
+
+// /* =========================
+//    Server-side fetch (RESPECTS locale via pickLocale)
+// ========================= */
+// async function fetchAllSections(locale: Lang) {
 //   const [heroSec, whySec, howSec, productsSec, pricingSec, ctaSec, testiSec] =
 //     await Promise.all([
 //       AgileStoreAPI.getSection<any>("hero"),
@@ -365,89 +495,13 @@
 //       AgileStoreAPI.getSection<any>("testimonials"),
 //     ]);
 
-//   const hero = heroSec?.content ?? FALLBACK_HERO;
-
-//   const benefits = {
-//     title: whySec?.content?.title ?? FALLBACK_BENEFITS.title,
-//     subtitle: whySec?.content?.subtitle ?? FALLBACK_BENEFITS.subtitle,
-//     items: whySec?.content?.items ?? FALLBACK_BENEFITS.items,
-//   };
-
-//   const hiw = {
-//     title: howSec?.content?.title ?? FALLBACK_HIW.title,
-//     subtitle: howSec?.content?.subtitle ?? FALLBACK_HIW.subtitle,
-//     steps:
-//       howSec?.content?.steps ?? howSec?.content?.items ?? FALLBACK_HIW.steps,
-//   };
-
-//   const featured = {
-//     title: productsSec?.content?.title ?? FALLBACK_FEATURED.title,
-//     subtitle: productsSec?.content?.subtitle ?? FALLBACK_FEATURED.subtitle,
-//     products:
-//       productsSec?.content?.products ??
-//       productsSec?.content?.items ??
-//       FALLBACK_FEATURED.products,
-//   };
-
-//   const pricing = {
-//     title: pricingSec?.content?.title ?? FALLBACK_PRICING.title,
-//     subtitle: pricingSec?.content?.subtitle ?? FALLBACK_PRICING.subtitle,
-//     plans:
-//       pricingSec?.content?.plans ??
-//       pricingSec?.content?.items ??
-//       FALLBACK_PRICING.plans,
-//   };
-
-//   const finalCta = {
-//     titleHTML:
-//       ctaSec?.content?.titleHTML ??
-//       ctaSec?.content?.title_html ??
-//       FALLBACK_FINAL_CTA.titleHTML,
-//     subtitle: ctaSec?.content?.subtitle ?? FALLBACK_FINAL_CTA.subtitle,
-//     primary: ctaSec?.content?.primary ?? FALLBACK_FINAL_CTA.primary,
-//     secondary: ctaSec?.content?.secondary ?? FALLBACK_FINAL_CTA.secondary,
-//     bullets: ctaSec?.content?.bullets ?? FALLBACK_FINAL_CTA.bullets,
-//   };
-
-//   // Testimonials: normalisasi fleksibel
-//   const testiItemsFromItems = Array.isArray(testiSec?.items)
-//     ? testiSec!.items.map((it: any) => {
-//         const ex = it?.extras ?? {};
-//         return {
-//           name: it.title ?? ex.person_name ?? ex.name ?? it.name ?? "",
-//           role: it.subtitle ?? ex.person_role ?? ex.role ?? "",
-//           content: ex.quote ?? it.content ?? it.description ?? ex.content ?? "",
-//           rating: Number(ex.rating ?? it.rating ?? 5),
-//           avatar: ex.avatar ?? ex.photo ?? it.avatar ?? "",
-//         };
-//       })
-//     : null;
-
-//   const rawFromContent = Array.isArray(testiSec?.content?.items)
-//     ? testiSec!.content!.items
-//     : null;
-
-//   const normalizedFromContent = rawFromContent
-//     ? rawFromContent.map((r: any) => ({
-//         name: r.name ?? r.person_name ?? r.title ?? "",
-//         role: r.role ?? r.person_role ?? r.subtitle ?? "",
-//         content: r.content ?? r.quote ?? r.description ?? "",
-//         rating: Number(r.rating ?? 5),
-//         avatar: r.avatar ?? "",
-//       }))
-//     : null;
-
-//   const testimonials = {
-//     title: testiSec?.content?.title ?? FALLBACK_TESTIMONIALS.title,
-//     subtitle: testiSec?.content?.subtitle ?? FALLBACK_TESTIMONIALS.subtitle,
-//     autoplayMs:
-//       testiSec?.content?.autoplayMs ?? FALLBACK_TESTIMONIALS.autoplayMs,
-//     items:
-//       normalizedFromContent ??
-//       testiItemsFromItems ??
-//       FALLBACK_TESTIMONIALS.items,
-//   };
-
+//   const hero = normalizeHero(heroSec, locale);
+//   const benefits = normalizeBenefits(whySec, locale);
+//   const hiw = normalizeHow(howSec, locale);
+//   const featured = normalizeProducts(productsSec, locale);
+//   const pricing = normalizePricing(pricingSec, locale);
+//   const finalCta = normalizeCTA(ctaSec, locale);
+//   const testimonials = normalizeTestimonials(testiSec, locale);
 //   const trusted = {
 //     headline: "Trusted by our customers",
 //     items: (testimonials.items || []).slice(0, 3).map((t: any) => ({
@@ -457,7 +511,6 @@
 //       avatar: t.avatar,
 //     })),
 //   };
-
 //   return {
 //     hero,
 //     benefits,
@@ -474,7 +527,6 @@
 //    PAGE (Server Component)
 // ========================= */
 // export default async function HomePage() {
-//   // âœ… baca cookie secara async, sekali di sini
 //   const cookieStore = await cookies();
 //   const localeCookie = cookieStore.get("locale")?.value;
 //   const locale: Lang = localeCookie === "en" ? "en" : "id";
@@ -483,7 +535,7 @@
 //   const usdRate =
 //     Number.isFinite(usdRateRaw) && usdRateRaw > 0 ? usdRateRaw : 15500;
 
-//   const data = await fetchAllSections();
+//   const data = await fetchAllSections(locale);
 
 //   return (
 //     <div className="min-h-screen bg-slate-50">
@@ -562,7 +614,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== TrustedBySection (UI unchanged) ========== */}
+//         {/* ========== TrustedBySection ========== */}
 //         <section className="py-12 bg-white border-b border-slate-200">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-8">
@@ -570,7 +622,6 @@
 //                 {data.trusted.headline ?? "Trusted by our customers"}
 //               </p>
 //             </div>
-
 //             <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
 //               {(data.trusted.items ?? FALLBACK_TRUSTED.items)
 //                 .slice(0, 3)
@@ -609,7 +660,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== FeaturedProductsSection (UI unchanged) ========== */}
+//         {/* ========== Featured Products ========== */}
 //         <section className="py-16 sm:py-24 bg-slate-50">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-12">
@@ -620,7 +671,6 @@
 //                 {data.featured.subtitle}
 //               </p>
 //             </div>
-
 //             <div className="grid md:grid-cols-2 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
 //               {(data.featured.products ?? FALLBACK_FEATURED.products).map(
 //                 (p: any, idx: number) => {
@@ -667,7 +717,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== BenefitsSection (UI unchanged) ========== */}
+//         {/* ========== Benefits ========== */}
 //         <section className="py-16 sm:py-24 bg-white">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-12">
@@ -678,7 +728,6 @@
 //                 {data.benefits.subtitle}
 //               </p>
 //             </div>
-
 //             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
 //               {(data.benefits.items ?? FALLBACK_BENEFITS.items).map(
 //                 (b: any, i: number) => {
@@ -702,7 +751,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== HowItWorksSection (UI unchanged) ========== */}
+//         {/* ========== How It Works ========== */}
 //         <section className="py-16 sm:py-24 bg-slate-50">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-12">
@@ -730,14 +779,12 @@
 //                           </span>
 //                         </div>
 //                       </div>
-
 //                       <h3 className="font-semibold text-xl text-slate-900 mb-3">
 //                         {s.title}
 //                       </h3>
 //                       <p className="text-slate-600 leading-relaxed">
 //                         {s.description}
 //                       </p>
-
 //                       {idx < (data.hiw.steps?.length ?? 3) - 1 && (
 //                         <div className="hidden md:block absolute top-10 left-full w-full h-0.5 bg-gradient-to-r from-blue-200 to-violet-200 transform -translate-x-1/2 z-0"></div>
 //                       )}
@@ -749,7 +796,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== PricingHighlightSection (UI unchanged) ========== */}
+//         {/* ========== Pricing ========== */}
 //         <section className="py-16 sm:py-24 bg-white">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-12">
@@ -760,7 +807,6 @@
 //                 {data.pricing.subtitle}
 //               </p>
 //             </div>
-
 //             <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
 //               {(data.pricing.plans ?? FALLBACK_PRICING.plans).map(
 //                 (plan: any, index: number) => (
@@ -779,15 +825,20 @@
 //                         </span>
 //                       </div>
 //                     )}
-
 //                     <div className="p-6 pb-4 text-center">
 //                       <h3 className="text-2xl font-bold text-slate-900">
 //                         {plan.name}
 //                       </h3>
 //                       {(() => {
+//                         const cookieStore = { locale: "id" as Lang }; // placeholder to satisfy TS in SSR block below
+//                         return null;
+//                       })()}
+//                       {/* Harga */}
+//                       {(() => {
+//                         const cookieLocale = locale as Lang;
 //                         const { priceText, periodText } = resolvePrice(
 //                           plan,
-//                           locale,
+//                           cookieLocale,
 //                           usdRate
 //                         );
 //                         return (
@@ -801,7 +852,6 @@
 //                       })()}
 //                       <p className="mt-2 text-slate-600">{plan.description}</p>
 //                     </div>
-
 //                     <div className="px-6 pt-0 pb-6">
 //                       <ul className="space-y-3 mb-8">
 //                         {(plan.features ?? []).map(
@@ -834,7 +884,6 @@
 //                 )
 //               )}
 //             </div>
-
 //             <div className="text-center mt-12">
 //               <Link href="/products">
 //                 <Button
@@ -849,7 +898,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== TestimonialsSection (UI unchanged) ========== */}
+//         {/* ========== Testimonials ========== */}
 //         <section className="py-16 sm:py-24 bg-background">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 //             <div className="text-center mb-12">
@@ -860,7 +909,6 @@
 //                 {data.testimonials.subtitle}
 //               </p>
 //             </div>
-
 //             <div className="max-w-4xl mx-auto">
 //               <div className="relative">
 //                 <div className="border-border shadow-lg rounded-lg">
@@ -878,7 +926,6 @@
 //                         />
 //                       </svg>
 //                     </div>
-
 //                     {(() => {
 //                       const t = (data.testimonials.items ??
 //                         FALLBACK_TESTIMONIALS.items)[0];
@@ -892,19 +939,17 @@
 //                             {stars.map((on, i) => (
 //                               <Star
 //                                 key={i}
-//                                 className={`h-5 w-5 ${
+//                                 className={
 //                                   on
-//                                     ? "text-yellow-400 fill-current"
-//                                     : "text-muted-foreground/30"
-//                                 }`}
+//                                     ? "h-5 w-5 text-yellow-400 fill-current"
+//                                     : "h-5 w-5 text-muted-foreground/30"
+//                                 }
 //                               />
 //                             ))}
 //                           </div>
-
 //                           <blockquote className="text-lg sm:text-xl text-foreground mb-6 leading-relaxed">
-//                             â€œ{t?.content}â€
+//                             “{t?.content}”
 //                           </blockquote>
-
 //                           <div className="flex items-center justify-center space-x-4">
 //                             <img
 //                               src={t?.avatar || "/placeholder.svg"}
@@ -931,7 +976,7 @@
 //           </div>
 //         </section>
 
-//         {/* ========== FinalCTASection (UI unchanged) ========== */}
+//         {/* ========== Final CTA ========== */}
 //         <section className="py-16 sm:py-24 bg-gradient-to-r from-blue-600 to-violet-600 relative overflow-hidden">
 //           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
 //             <div className="text-center max-w-4xl mx-auto">
@@ -940,7 +985,6 @@
 //                   <Sparkles className="w-8 h-8 text-white" />
 //                 </div>
 //               </div>
-
 //               <h2
 //                 className="font-sans font-bold text-3xl sm:text-4xl lg:text-5xl text-white mb-6 leading-tight"
 //                 dangerouslySetInnerHTML={{
@@ -950,11 +994,9 @@
 //                       : FALLBACK_FINAL_CTA.titleHTML,
 //                 }}
 //               />
-
 //               <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto leading-relaxed">
 //                 {data.finalCta.subtitle}
 //               </p>
-
 //               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
 //                 <Link href={data.finalCta.primary?.href ?? "/products"}>
 //                   <Button
@@ -975,7 +1017,6 @@
 //                   </Button>
 //                 </Link>
 //               </div>
-
 //               <div className="mt-8 flex items-center justify-center gap-8 text-blue-100 text-sm">
 //                 {(data.finalCta.bullets ?? FALLBACK_FINAL_CTA.bullets).map(
 //                   (b: string, i: number) => (
@@ -988,7 +1029,6 @@
 //               </div>
 //             </div>
 //           </div>
-
 //           {/* Background decoration */}
 //           <div className="absolute inset-0">
 //             <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
@@ -996,13 +1036,11 @@
 //           </div>
 //         </section>
 //       </main>
-
 //       <Footer />
 //     </div>
 //   );
 // }
 
-// app/page.tsx
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Header } from "@/components/header";
@@ -1036,6 +1074,21 @@ import {
 ========================= */
 type Lang = "id" | "en";
 
+/** Edge/Node-safe: baca bahasa dari cookie yang diset LanguageProvider/LanguageSwitcher */
+async function readLang(): Promise<Lang> {
+  const maybe = cookies() as any;
+  const store = typeof maybe?.then === "function" ? await maybe : maybe;
+
+  const raw =
+    store.get("agile.lang")?.value ?? // utama: yang ditulis LanguageProvider
+    store.get("agile_lang")?.value ?? // alternatif lama
+    store.get("locale")?.value ?? // fallback lain
+    store.get("lang")?.value ?? // fallback lain
+    "id";
+
+  return raw === "en" ? "en" : "id";
+}
+
 /** Normalisasi angka harga ke number (terima number / "Rp 100.000" / "100,000" / "$79") */
 function normalizePriceToNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -1049,9 +1102,9 @@ function normalizePriceToNumber(v: unknown): number | null {
 
 /**
  * Pilih & format harga sesuai locale.
- * Asumsi: nilai sumber (plan.price/*) adalah **IDR**.
- * - locale 'id'  → tampil Rp ... /bulan
- * - locale 'en'  → konversi ke USD pakai usdRate (IDR per 1 USD) → $ ... /month
+ * Asumsi sumber = IDR (dari DB).
+ * - 'id' → tampil Rp ... /bulan
+ * - 'en' → konversi USD memakai usdRate (IDR per 1 USD) → $ ... /month
  */
 function resolvePrice(plan: any, locale: Lang, usdRate: number) {
   const p = plan?.price;
@@ -1063,7 +1116,6 @@ function resolvePrice(plan: any, locale: Lang, usdRate: number) {
     plan?.price_yearly ??
     null;
 
-  // Normalisasi ke number → dianggap IDR
   let amountIdr = normalizePriceToNumber(rawPrice);
   if (amountIdr == null) amountIdr = 0;
 
@@ -1087,7 +1139,7 @@ function resolvePrice(plan: any, locale: Lang, usdRate: number) {
 }
 
 /* =========================
-   Fallbacks (UI tidak diubah)
+   FALLBACKS (UI tidak diubah)
 ========================= */
 const FALLBACK_HERO = {
   title: "Digital Products to",
@@ -1349,36 +1401,98 @@ function IconByName(
 /* =========================
    Normalizers per section (respect locale via pickLocale)
 ========================= */
-function parseHeroPartsFromTitle(full?: string | null) {
+function parseHeroPartsFromTitle(
+  full?: string | null,
+  locale?: "id" | "en",
+  explicitHighlight?: string | null
+) {
   if (!full || typeof full !== "string") return null;
-  // Heuristik ringan untuk memecah "Digital Products to Grow Your Business, Faster."
-  const target = "Grow Your Business";
-  const idx = full.indexOf(target);
-  if (idx >= 0) {
-    const before = full.slice(0, idx).trim(); // "Digital Products to"
-    const after = full.slice(idx + target.length).trim(); // ", Faster." (mungkin tanpa koma)
-    const trailing = after.startsWith(",") ? after : after ? ", " + after : "";
-    return { title: before, highlight: target, trailing };
+
+  // 1) Kalau DB menyediakan highlight sendiri, hormati itu
+  if (explicitHighlight && full.includes(explicitHighlight)) {
+    const idx = full.indexOf(explicitHighlight);
+    const before = full.slice(0, idx).trim();
+    const after = full.slice(idx + explicitHighlight.length).trim();
+    const trailing = after
+      ? after.startsWith(",")
+        ? after
+        : ", " + after
+      : "";
+    return { title: before, highlight: explicitHighlight, trailing };
   }
-  // fallback: tidak bisa dipecah
+
+  // 2) Heuristik bahasa: coba beberapa frasa umum
+  const candidates = [
+    "Grow Your Business",
+    "Kembangkan Bisnis Anda",
+    "Mengembangkan Bisnis Anda",
+    "Usahamu", // longgar — bisa kamu tambah sesuai copywritingmu
+  ];
+  for (const key of candidates) {
+    const i = full.indexOf(key);
+    if (i >= 0) {
+      const before = full.slice(0, i).trim();
+      const after = full.slice(i + key.length).trim();
+      const trailing = after
+        ? after.startsWith(",")
+          ? after
+          : ", " + after
+        : "";
+      return { title: before, highlight: key, trailing };
+    }
+  }
+
+  // 3) Kalau ada koma, pecah di koma pertama
+  const comma = full.indexOf(",");
+  if (comma > 0) {
+    return {
+      title: full.slice(0, comma).trim(),
+      highlight: "",
+      trailing: full.slice(comma).trim(), // termasuk koma
+    };
+  }
+
+  // 4) Gagal pecah → biarkan utuh (akan dirender tanpa highlight)
   return null;
 }
 
 function normalizeHero(
   section: AgileStoreSectionResp<any> | null,
-  locale: Lang
+  locale: "id" | "en"
 ) {
   const { content } = pickLocale<any>(section, locale);
-  // Bentuk DB Anda: content.title, content.subtitle, primaryCta (string), secondaryCta (string)
-  const parts = parseHeroPartsFromTitle(content?.title);
-  const base = { ...FALLBACK_HERO };
+
+  // Mulai dari objek kosong, JANGAN dari fallback (agar tak “terkunci” Inggris)
+  const base = {
+    title: "",
+    highlight: "",
+    trailing: "",
+    tagline: "",
+    primaryCta: { label: "", href: "/products" },
+    secondaryCta: { label: "", href: "/signup", variant: "outline" as const },
+  };
+
+  // Pakai judul dari DB (utuh) jika ada
+  const parts = parseHeroPartsFromTitle(
+    content?.title,
+    locale,
+    content?.highlight
+  );
   if (parts) {
-    base.title = parts.title || base.title;
-    base.highlight = parts.highlight || base.highlight;
-    base.trailing = parts.trailing || base.trailing;
+    base.title = parts.title || "";
+    base.highlight = parts.highlight || "";
+    base.trailing = parts.trailing || "";
+  } else if (content?.title) {
+    // ← KUNCI PERBAIKAN: kalau tak bisa di-split, render apa adanya sebagai title
+    base.title = String(content.title);
+    base.highlight = "";
+    base.trailing = "";
+  } else {
+    // benar-benar tak ada di DB → terakhir barulah fallback
+    Object.assign(base, FALLBACK_HERO);
   }
+
   if (content?.subtitle) base.tagline = content.subtitle;
-  // CTA bisa berupa string; bungkus ke bentuk {label, href}
   if (content?.primaryCta)
     base.primaryCta = { label: String(content.primaryCta), href: "/products" };
   if (content?.secondaryCta)
@@ -1387,6 +1501,12 @@ function normalizeHero(
       href: "/signup",
       variant: "outline" as const,
     };
+
+  // Isi default untuk field kosong saja (bukan overwrite)
+  if (!base.tagline) base.tagline = FALLBACK_HERO.tagline;
+  if (!base.primaryCta?.label) base.primaryCta = FALLBACK_HERO.primaryCta;
+  if (!base.secondaryCta?.label) base.secondaryCta = FALLBACK_HERO.secondaryCta;
+
   return base;
 }
 
@@ -1396,8 +1516,10 @@ function normalizeBenefits(
 ) {
   const { content } = pickLocale<any>(section, locale);
   return {
-    title: content?.title ?? FALLBACK_BENEFITS.title,
-    subtitle: content?.subtitle ?? FALLBACK_BENEFITS.subtitle,
+    title:
+      content?.title ??
+      (locale === "id" ? "Mengapa Agile Store" : "Why Agile Store"),
+    subtitle: content?.subtitle ?? STATIC_FALLBACK[locale].benefitsSubtitle,
     items: content?.items ?? FALLBACK_BENEFITS.items,
   };
 }
@@ -1477,9 +1599,12 @@ function normalizeTestimonials(
         avatar: r.avatar ?? "",
       }))
     : null;
+
   return {
-    title: content?.title ?? FALLBACK_TESTIMONIALS.title,
-    subtitle: content?.subtitle ?? FALLBACK_TESTIMONIALS.subtitle,
+    title:
+      content?.title ??
+      (locale === "id" ? "Apa Kata Pelanggan Kami" : "What Our Customers Say"),
+    subtitle: content?.subtitle ?? STATIC_FALLBACK[locale].testimonialsSubtitle,
     autoplayMs: content?.autoplayMs ?? FALLBACK_TESTIMONIALS.autoplayMs,
     items: items ?? FALLBACK_TESTIMONIALS.items,
   };
@@ -1508,7 +1633,10 @@ async function fetchAllSections(locale: Lang) {
   const finalCta = normalizeCTA(ctaSec, locale);
   const testimonials = normalizeTestimonials(testiSec, locale);
   const trusted = {
-    headline: "Trusted by our customers",
+    headline:
+      locale === "id"
+        ? "Dipercaya oleh pelanggan kami"
+        : "Trusted by our customers",
     items: (testimonials.items || []).slice(0, 3).map((t: any) => ({
       name: t.name,
       role: t.role,
@@ -1529,35 +1657,74 @@ async function fetchAllSections(locale: Lang) {
 }
 
 /* =========================
+   i18n static labels (yang tidak berasal dari DB)
+========================= */
+const UI_TEXT = {
+  en: {
+    viewProduct: "View Product",
+    mostPopular: "Most Popular",
+    compareAllPlans: "Compare All Plans",
+    startNow: "Start Now",
+  },
+  id: {
+    viewProduct: "Lihat Produk",
+    mostPopular: "Paling Populer",
+    compareAllPlans: "Bandingkan Semua Paket",
+    startNow: "Mulai Sekarang",
+  },
+} as const;
+
+const STATIC_FALLBACK = {
+  en: {
+    benefitsSubtitle:
+      "Everything you need to succeed, backed by the features that matter most.",
+    testimonialsSubtitle:
+      "Join thousands of satisfied customers who have transformed their workflows with Agile Store",
+  },
+  id: {
+    benefitsSubtitle:
+      "Semua yang Anda butuhkan untuk sukses, didukung fitur-fitur yang paling penting.",
+    testimonialsSubtitle:
+      "Bergabunglah dengan ribuan pelanggan yang telah mentransformasi alur kerja mereka dengan Agile Store",
+  },
+} as const;
+
+/* =========================
    PAGE (Server Component)
 ========================= */
 export default async function HomePage() {
+  const locale = await readLang(); // ← baca dari cookie LanguageProvider
   const cookieStore = await cookies();
-  const localeCookie = cookieStore.get("locale")?.value;
-  const locale: Lang = localeCookie === "en" ? "en" : "id";
-
   const usdRateRaw = Number(cookieStore.get("usd_idr")?.value);
   const usdRate =
     Number.isFinite(usdRateRaw) && usdRateRaw > 0 ? usdRateRaw : 15500;
 
   const data = await fetchAllSections(locale);
+  const T = UI_TEXT[locale];
 
   return (
     <div className="min-h-screen bg-slate-50">
       <Header />
 
       <main>
-        {/* ========== HeroSection (UI unchanged) ========== */}
+        {/* ========== HeroSection ========== */}
         <section className="relative overflow-hidden bg-gradient-to-br from-slate-50 via-slate-50 to-blue-50 py-16 sm:py-24 lg:py-32">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               <div className="text-center lg:text-left">
                 <h1 className="font-sans font-bold text-4xl sm:text-5xl lg:text-6xl text-slate-900 mb-6 leading-tight">
-                  {data.hero.title}{" "}
-                  <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-                    {data.hero.highlight}
-                  </span>
-                  {data.hero.trailing}
+                  {data.hero.highlight ? (
+                    <>
+                      {data.hero.title}{" "}
+                      <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+                        {data.hero.highlight}
+                      </span>
+                      {data.hero.trailing}
+                    </>
+                  ) : (
+                    // judul utuh tanpa highlight
+                    <>{data.hero.title || FALLBACK_HERO.title}</>
+                  )}
                 </h1>
                 <p className="text-lg sm:text-xl text-slate-600 mb-8 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
                   {data.hero.tagline}
@@ -1611,7 +1778,6 @@ export default async function HomePage() {
                   </div>
                 </div>
 
-                {/* Floating elements */}
                 <div className="absolute -top-4 -right-4 w-16 h-16 bg-gradient-to-r from-blue-500 to-violet-500 rounded-full opacity-20 blur-xl"></div>
                 <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-gradient-to-r from-violet-500 to-blue-500 rounded-full opacity-20 blur-xl"></div>
               </div>
@@ -1619,12 +1785,15 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ========== TrustedBySection ========== */}
+        {/* ========== TrustedBy ========== */}
         <section className="py-12 bg-white border-b border-slate-200">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8">
               <p className="text-slate-600 font-medium">
-                {data.trusted.headline ?? "Trusted by our customers"}
+                {data.trusted.headline ??
+                  (locale === "id"
+                    ? "Dipercaya oleh pelanggan kami"
+                    : "Trusted by our customers")}
               </p>
             </div>
             <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
@@ -1709,7 +1878,7 @@ export default async function HomePage() {
                             variant="outline"
                             className="w-full group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all duration-300 bg-transparent"
                           >
-                            {p.cta?.label ?? "View Product"}
+                            {p.cta?.label ?? T.viewProduct}
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </Button>
                         </Link>
@@ -1826,7 +1995,7 @@ export default async function HomePage() {
                     {plan.popular && (
                       <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                         <span className="bg-gradient-to-r from-blue-600 to-violet-600 text-white px-4 py-1 rounded-full text-sm font-medium">
-                          Most Popular
+                          {T.mostPopular}
                         </span>
                       </div>
                     )}
@@ -1834,16 +2003,12 @@ export default async function HomePage() {
                       <h3 className="text-2xl font-bold text-slate-900">
                         {plan.name}
                       </h3>
+
+                      {/* Harga: IDR untuk 'id', USD untuk 'en' (tampilan saja) */}
                       {(() => {
-                        const cookieStore = { locale: "id" as Lang }; // placeholder to satisfy TS in SSR block below
-                        return null;
-                      })()}
-                      {/* Harga */}
-                      {(() => {
-                        const cookieLocale = locale as Lang;
                         const { priceText, periodText } = resolvePrice(
                           plan,
-                          cookieLocale,
+                          locale,
                           usdRate
                         );
                         return (
@@ -1880,7 +2045,7 @@ export default async function HomePage() {
                           } text-white`}
                           size="lg"
                         >
-                          {plan.cta?.label ?? "Start Now"}
+                          {plan.cta?.label ?? T.startNow}
                           <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
                       </Link>
@@ -1896,7 +2061,7 @@ export default async function HomePage() {
                   size="lg"
                   className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
                 >
-                  Compare All Plans
+                  {T.compareAllPlans}
                 </Button>
               </Link>
             </div>
@@ -2034,7 +2199,6 @@ export default async function HomePage() {
               </div>
             </div>
           </div>
-          {/* Background decoration */}
           <div className="absolute inset-0">
             <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
             <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-yellow-300/10 rounded-full blur-3xl"></div>

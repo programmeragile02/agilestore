@@ -714,33 +714,51 @@ export type AgileStoreSectionResp<T = any> = {
   items_en?: any[] | null;
 };
 
+function parseMaybeJSON<T = any>(v: unknown): T | null {
+  if (v == null) return null;
+  if (typeof v === "string") {
+    try {
+      const t = v.trim();
+      if (!t) return null;
+      return JSON.parse(t) as T;
+    } catch {
+      return null; // biarkan null jika bukan JSON valid
+    }
+  }
+  if (typeof v === "object") return v as T;
+  return null;
+}
+
 // Helper kecil untuk aman pada berbagai bentuk payload
 function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
   const root = resp?.data ?? resp ?? {};
 
-  const content =
+  // ambil mentahan dari berbagai kemungkinan field
+  const rawContent =
     root.content ?? root.payload?.content ?? root.data?.content ?? null;
 
-  // ⬇️ baca variasi nama "content_en"
-  const content_en =
+  const rawContentEn =
     root.content_en ??
     root.payload?.content_en ??
     root.data?.content_en ??
     root.contentEn ??
     null;
 
+  // ⬇ parse jika string JSON
+  const content    = parseMaybeJSON(rawContent)    ?? rawContent ?? null;
+  const content_en = parseMaybeJSON(rawContentEn) ?? rawContentEn ?? null;
+
+  // items (kalau ada disisipkan di dalam content / content_en)
   const items =
     root.items ??
-    root.content?.items ??
+    (content && (content as any).items) ??
     root.data?.items ??
-    (Array.isArray(content?.items) ? content.items : null) ??
     null;
 
   const items_en =
     root.items_en ??
-    root.content_en?.items ??
+    (content_en && (content_en as any).items) ??
     root.data?.items_en ??
-    (Array.isArray(content_en?.items) ? content_en.items : null) ??
     null;
 
   return {
@@ -763,22 +781,27 @@ export function pickLocale<T = any>(
   locale: "id" | "en"
 ): { content: T | null; items: any[] | null } {
   if (!section) return { content: null, items: null };
+
   if (locale === "en") {
     const c =
-      (section as any).content_en ??
-      (section.content && (section.content as any).en) ??
+      (section as any).content_en ??               // kolom content_en (sudah diparse)
+      (section.content && (section.content as any).en) ?? // fallback jika API model lama
       null;
+
     const it = section.items_en ?? ((c && (c as any).items) || null) ?? null;
+
     return {
       content: (c as T) ?? section.content ?? null,
       items: it ?? section.items ?? null,
     };
   }
-  // locale id
+
+  // locale 'id'
   const it =
     section.items ??
     ((section.content && (section.content as any).items) || null) ??
     null;
+
   return { content: section.content ?? null, items: it };
 }
 
@@ -787,13 +810,13 @@ export const AgileStoreAPI = {
     key: string,
     init?: RequestInit
   ): Promise<AgileStoreSectionResp<T> | null> {
-    if (typeof window === "undefined" && key === "footer") {
-      const stack = new Error().stack || "";
-      if (stack.includes("footer")) {
-        console.warn("[AgileStoreAPI] Skipping self-fetch for footer");
-        return null;
-      }
-    }
+    // if (typeof window === "undefined" && key === "footer") {
+    //   const stack = new Error().stack || "";
+    //   if (stack.includes("footer")) {
+    //     console.warn("[AgileStoreAPI] Skipping self-fetch for footer");
+    //     return null;
+    //   }
+    // }
 
     const res = await fetch(
       `${API_BASE}agile-store/sections/${encodeURIComponent(key)}`,
