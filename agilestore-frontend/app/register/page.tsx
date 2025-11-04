@@ -1,10 +1,10 @@
 "use client";
 
 import type React from "react";
-
-import { useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,18 +24,90 @@ import {
   Mail,
   Lock,
   User,
-  Building,
   ArrowLeft,
   Shield,
   CheckCircle,
   Star,
 } from "lucide-react";
+
 import { loginWithGoogle, registerCustomer } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
-import { GoogleLogin } from "@react-oauth/google";
+import { useLanguage } from "@/components/LanguageProvider";
+
+/** GSI global */
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+/** Tombol Google yang selalu ikut bahasa aktif (hl=<lang>) */
+function GoogleSignupButton({
+  lang,
+  onCredential,
+  text = "signup_with", // "continue_with" | "signup_with"
+}: {
+  lang: "id" | "en";
+  onCredential: (credential: string) => void;
+  text?: "continue_with" | "signup_with";
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    if (!CLIENT_ID) {
+      console.warn("NEXT_PUBLIC_GOOGLE_CLIENT_ID belum diset");
+      return;
+    }
+
+    const SCRIPT_ID = "gsi-client";
+    // buang script lama + reset container
+    document.getElementById(SCRIPT_ID)?.remove();
+    if (ref.current) ref.current.innerHTML = "";
+    (window as any).google = undefined;
+
+    const s = document.createElement("script");
+    s.id = SCRIPT_ID;
+    s.src = `https://accounts.google.com/gsi/client?hl=${lang}`;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => {
+      try {
+        window.google?.accounts.id.initialize({
+          client_id: CLIENT_ID,
+          callback: (resp: any) => {
+            const cred = resp?.credential;
+            if (cred) onCredential(cred);
+          },
+          ux_mode: "popup",
+          auto_select: false,
+          itp_support: true,
+          context: "signup",
+        });
+
+        if (ref.current) {
+          window.google?.accounts.id.renderButton(ref.current, {
+            theme: "outline",
+            size: "large",
+            type: "standard",
+            text, // "signup_with"
+            shape: "pill",
+          });
+        }
+      } catch (e) {
+        console.error("GSI init error:", e);
+      }
+    };
+    document.head.appendChild(s);
+  }, [CLIENT_ID, lang, text, onCredential]);
+
+  return <div ref={ref} className="flex justify-center" />;
+}
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { lang } = useLanguage(); // "en" | "id"
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,12 +117,84 @@ export default function RegisterPage() {
     fullName: "",
     email: "",
     phone: "",
-    company: "",
     password: "",
     confirmPassword: "",
     agreeToTerms: false,
     subscribeNewsletter: true,
   });
+
+  const T = useMemo(
+    () =>
+      ({
+        back: { en: "Back to Agile Store", id: "Kembali ke Agile Store" },
+        title: { en: "Create Account", id: "Buat Akun" },
+        subtitle: {
+          en: "Join thousands of businesses using Agile Store",
+          id: "Bergabung dengan ribuan bisnis yang memakai Agile Store",
+        },
+        benefitTrial: {
+          en: "14-day free trial",
+          id: "Uji coba 14 hari gratis",
+        },
+        benefitNoCard: {
+          en: "No credit card required",
+          id: "Tanpa kartu kredit",
+        },
+        benefitCancel: { en: "Cancel anytime", id: "Bisa batalkan kapan saja" },
+        fullName: { en: "Full Name", id: "Nama Lengkap" },
+        fullNamePh: { en: "John Doe", id: "Budi Santoso" },
+        email: { en: "Email Address", id: "Alamat Email" },
+        emailPh: { en: "john@company.com", id: "nama@perusahaan.com" },
+        phone: { en: "Phone Number", id: "Nomor Telepon" },
+        phonePh: { en: "+62812345678", id: "+62812345678" },
+        pass: { en: "Password", id: "Kata Sandi" },
+        passPh: { en: "Create a strong password", id: "Buat kata sandi kuat" },
+        confirm: { en: "Confirm Password", id: "Konfirmasi Kata Sandi" },
+        confirmPh: {
+          en: "Confirm your password",
+          id: "Ulangi kata sandi Anda",
+        },
+        terms: {
+          en: "I agree to the",
+          id: "Saya setuju dengan",
+        },
+        tos: { en: "Terms of Service", id: "Ketentuan Layanan" },
+        privacy: { en: "Privacy Policy", id: "Privasi" },
+        news: {
+          en: "Send me product updates and marketing emails",
+          id: "Kirimkan saya update produk & email pemasaran",
+        },
+        create: { en: "Create Account", id: "Buat Akun" },
+        creating: { en: "Creating Account...", id: "Membuat Akun..." },
+        orWith: { en: "OR SIGN UP WITH", id: "ATAU DAFTAR DENGAN" },
+        haveAcc: { en: "Already have an account?", id: "Sudah punya akun?" },
+        signIn: { en: "Sign in", id: "Masuk" },
+        errAgree: {
+          en: "Please agree to the Terms & Privacy Policy.",
+          id: "Silakan setujui Ketentuan & Kebijakan Privasi.",
+        },
+        errMismatch: {
+          en: "Password and confirmation do not match.",
+          id: "Kata sandi dan konfirmasi tidak sama.",
+        },
+        okCreated: {
+          en: "Account created successfully. Redirecting to Sign in…",
+          id: "Akun berhasil dibuat. Mengalihkan ke halaman Masuk…",
+        },
+        errReg: {
+          en: "Registration failed. Please try again.",
+          id: "Gagal mendaftar. Coba lagi.",
+        },
+        gOk: { en: "Signed in with Google", id: "Masuk dengan Google" },
+        gBad: { en: "Google sign-in failed", id: "Gagal masuk Google" },
+        secure: { en: "256-bit SSL", id: "SSL 256-bit" },
+        gdpr: { en: "GDPR Compliant", id: "Patuh GDPR" },
+        soc2: { en: "SOC 2 Certified", id: "Tersertifikasi SOC 2" },
+      } as const),
+    []
+  );
+
+  const t = <K extends keyof typeof T>(k: K) => T[k][lang];
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -61,48 +205,43 @@ export default function RegisterPage() {
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // validasi ringan di client
     if (!formData.agreeToTerms) {
-      setErrorMsg("Please agree to the Terms & Privacy Policy.");
+      setErrorMsg(t("errAgree"));
       return;
     }
     if (formData.password !== formData.confirmPassword) {
-      setErrorMsg("Password and confirmation do not match.");
+      setErrorMsg(t("errMismatch"));
       return;
     }
 
     setIsLoading(true);
     try {
       await registerCustomer({
-        // map ke snake_case sesuai validator Laravel
         full_name: formData.fullName.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim(),
-        company: formData.company.trim() || null,
+        company: null,
         password: formData.password,
       });
 
-      setSuccessMsg("Account created successfully. Redirecting to Sign in…");
+      setSuccessMsg(t("okCreated"));
       setTimeout(() => router.push("/login"), 900);
     } catch (err: any) {
-      setErrorMsg(err?.message || "Registration failed. Please try again.");
+      setErrorMsg(err?.message || t("errReg"));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // login google
-  const handleGoogleSuccess = async (cred: any) => {
+  const handleGoogleCredential = async (cred: string) => {
     try {
-      const idToken = cred?.credential;
-      if (!idToken) throw new Error("No Google credential");
-      await loginWithGoogle(idToken);
+      await loginWithGoogle(cred);
       router.push("/");
-      toast({ title: "Signed in with Google" });
+      toast({ title: t("gOk") });
     } catch (e: any) {
       toast({
         variant: "destructive",
-        title: "Google sign-in failed",
+        title: t("gBad"),
         description: e?.message || "",
       });
     }
@@ -118,14 +257,13 @@ export default function RegisterPage() {
             className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Agile Store
+            {t("back")}
           </Link>
         </div>
 
-        {/* Main Register Card */}
+        {/* Card */}
         <Card className="shadow-xl border-0 bg-card/80 backdrop-blur-sm">
           <CardHeader className="space-y-4 pb-8">
-            {/* Logo */}
             <div className="flex justify-center">
               <div className="h-12 w-12 rounded-xl bg-gradient-to-r from-primary to-blue-500 flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-lg">AS</span>
@@ -134,10 +272,10 @@ export default function RegisterPage() {
 
             <div className="text-center space-y-2">
               <CardTitle className="text-2xl font-serif font-bold text-foreground">
-                Create Account
+                {t("title")}
               </CardTitle>
               <CardDescription className="text-muted-foreground">
-                Join thousands of businesses using Agile Store
+                {t("subtitle")}
               </CardDescription>
             </div>
 
@@ -145,61 +283,59 @@ export default function RegisterPage() {
             <div className="bg-muted/30 rounded-lg p-4 space-y-2">
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <Star className="h-4 w-4 text-yellow-500 fill-current" />
-                <span>14-day free trial</span>
+                <span>{t("benefitTrial")}</span>
               </div>
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <CheckCircle className="h-4 w-4 text-green-500" />
-                <span>No credit card required</span>
+                <span>{t("benefitNoCard")}</span>
               </div>
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <Shield className="h-4 w-4 text-blue-500" />
-                <span>Cancel anytime</span>
+                <span>{t("benefitCancel")}</span>
               </div>
             </div>
           </CardHeader>
 
           <CardContent className="space-y-6">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Name Fields */}
-              <div className="grid gap-3">
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="firstName"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Full Name
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="fullName"
-                      type="text"
-                      placeholder="John Doe"
-                      value={formData.fullName}
-                      onChange={(e) =>
-                        handleInputChange("fullName", e.target.value)
-                      }
-                      className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
-                      required
-                    />
-                  </div>
+              {/* Full Name */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="fullName"
+                  className="text-sm font-medium text-foreground"
+                >
+                  {t("fullName")}
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder={t("fullNamePh")}
+                    value={formData.fullName}
+                    onChange={(e) =>
+                      handleInputChange("fullName", e.target.value)
+                    }
+                    className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
+                    required
+                  />
                 </div>
               </div>
 
-              {/* Email Field */}
+              {/* Email */}
               <div className="space-y-2">
                 <Label
                   htmlFor="email"
                   className="text-sm font-medium text-foreground"
                 >
-                  Email Address
+                  {t("email")}
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder="john@company.com"
+                    placeholder={t("emailPh")}
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
                     className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -208,20 +344,20 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Phone Field */}
+              {/* Phone */}
               <div className="space-y-2">
                 <Label
-                  htmlFor="email"
+                  htmlFor="phone"
                   className="text-sm font-medium text-foreground"
                 >
-                  Phone Number
+                  {t("phone")}
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="+62812345678"
+                    placeholder={t("phonePh")}
                     value={formData.phone}
                     onChange={(e) => handleInputChange("phone", e.target.value)}
                     className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
@@ -230,43 +366,20 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Company Field */}
-              {/* <div className="space-y-2">
-                <Label
-                  htmlFor="company"
-                  className="text-sm font-medium text-foreground"
-                >
-                  Company Name
-                </Label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="company"
-                    type="text"
-                    placeholder="Your Company (optional)"
-                    value={formData.company}
-                    onChange={(e) =>
-                      handleInputChange("company", e.target.value)
-                    }
-                    className="pl-10 h-12 bg-input border-border focus:ring-2 focus:ring-ring focus:border-transparent"
-                  />
-                </div>
-              </div> */}
-
-              {/* Password Fields */}
+              {/* Password */}
               <div className="space-y-2">
                 <Label
                   htmlFor="password"
                   className="text-sm font-medium text-foreground"
                 >
-                  Password
+                  {t("pass")}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Create a strong password"
+                    placeholder={t("passPh")}
                     value={formData.password}
                     onChange={(e) =>
                       handleInputChange("password", e.target.value)
@@ -288,19 +401,20 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Confirm Password */}
               <div className="space-y-2">
                 <Label
                   htmlFor="confirmPassword"
                   className="text-sm font-medium text-foreground"
                 >
-                  Confirm Password
+                  {t("confirm")}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-4 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
-                    placeholder="Confirm your password"
+                    placeholder={t("confirmPh")}
                     value={formData.confirmPassword}
                     onChange={(e) =>
                       handleInputChange("confirmPassword", e.target.value)
@@ -329,7 +443,7 @@ export default function RegisterPage() {
                     id="terms"
                     checked={formData.agreeToTerms}
                     onCheckedChange={(checked) =>
-                      handleInputChange("agreeToTerms", checked as boolean)
+                      handleInputChange("agreeToTerms", !!checked)
                     }
                     className="mt-0.5"
                   />
@@ -337,31 +451,29 @@ export default function RegisterPage() {
                     htmlFor="terms"
                     className="text-sm text-muted-foreground leading-relaxed"
                   >
-                    I agree to the{" "}
+                    {t("terms")}{" "}
                     <Link
                       href="/terms"
                       className="text-primary hover:text-primary/80 underline"
                     >
-                      Terms of Service
+                      {t("tos")}
                     </Link>{" "}
-                    and{" "}
+                    {lang === "en" ? "and" : "dan"}{" "}
                     <Link
                       href="/privacy"
                       className="text-primary hover:text-primary/80 underline"
                     >
-                      Privacy Policy
+                      {t("privacy")}
                     </Link>
                   </Label>
                 </div>
+
                 <div className="flex items-start space-x-2">
                   <Checkbox
                     id="newsletter"
                     checked={formData.subscribeNewsletter}
                     onCheckedChange={(checked) =>
-                      handleInputChange(
-                        "subscribeNewsletter",
-                        checked as boolean
-                      )
+                      handleInputChange("subscribeNewsletter", !!checked)
                     }
                     className="mt-0.5"
                   />
@@ -369,7 +481,7 @@ export default function RegisterPage() {
                     htmlFor="newsletter"
                     className="text-sm text-muted-foreground"
                   >
-                    Send me product updates and marketing emails
+                    {t("news")}
                   </Label>
                 </div>
               </div>
@@ -392,7 +504,7 @@ export default function RegisterPage() {
                 disabled={isLoading || !formData.agreeToTerms}
                 className="w-full h-12 bg-gradient-to-r from-primary to-blue-500 hover:from-primary/90 hover:to-blue-500/90 text-primary-foreground font-medium shadow-lg transition-all duration-200 disabled:opacity-50"
               >
-                {isLoading ? "Creating Account..." : "Create Account"}
+                {isLoading ? t("creating") : t("create")}
               </Button>
             </form>
 
@@ -403,58 +515,45 @@ export default function RegisterPage() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-card px-2 text-muted-foreground">
-                  Or sign up with
+                  {t("orWith")}
                 </span>
               </div>
             </div>
 
-            {/* Social Registration */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() =>
-                    toast({
-                      variant: "destructive",
-                      title: "Google sign-in failed",
-                    })
-                  }
-                  useOneTap={false}
-                  theme="outline"
-                  size="large"
-                  text="signup_with"
-                  shape="pill"
-                />
-              </div>
-            </div>
+            {/* Google Sign Up – sinkron bahasa */}
+            <GoogleSignupButton
+              lang={lang}
+              text="signup_with"
+              onCredential={handleGoogleCredential}
+            />
           </CardContent>
 
           <CardFooter className="pt-6">
-            <div className="text-center text-sm text-muted-foreground">
-              Already have an account?{" "}
+            <div className="text-center text-sm text-muted-foreground w-full">
+              {t("haveAcc")}{" "}
               <Link
                 href="/login"
                 className="text-primary hover:text-primary/80 font-medium transition-colors"
               >
-                Sign in
+                {t("signIn")}
               </Link>
             </div>
           </CardFooter>
         </Card>
 
-        {/* Trust Indicators */}
+        {/* Trust indicators */}
         <div className="mt-8 flex items-center justify-center space-x-6 text-xs text-muted-foreground">
           <div className="flex items-center space-x-1">
             <Shield className="h-3 w-3" />
-            <span>256-bit SSL</span>
+            <span>{t("secure")}</span>
           </div>
           <div className="flex items-center space-x-1">
             <CheckCircle className="h-3 w-3" />
-            <span>GDPR Compliant</span>
+            <span>{t("gdpr")}</span>
           </div>
           <div className="flex items-center space-x-1">
             <Star className="h-3 w-3" />
-            <span>SOC 2 Certified</span>
+            <span>{t("soc2")}</span>
           </div>
         </div>
       </div>

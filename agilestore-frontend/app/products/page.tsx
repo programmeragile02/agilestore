@@ -1,4 +1,3 @@
-// app/products/page.tsx
 import type { Metadata } from "next";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
@@ -71,7 +70,7 @@ export default async function ProductsPage({
           </div>
         </section>
 
-        {/* Grid filter berdasarkan ?q= dari URL (SSR); akan ikut router.refresh() saat toggle */}
+        {/* Grid SSR -> client akan ambil teks UI dari LanguageProvider */}
         <ProductGrid query={q} />
       </main>
       <Footer />

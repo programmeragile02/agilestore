@@ -1,116 +1,110 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useEffect, useMemo, useState } from "react";
 
 type Lang = "id" | "en";
 
-interface ProductHeroProps {
-  product: {
-    name: string;
-    tagline?: string;
-    shortDescription: string;
-    heroImage: string;
-    slug: string;
+const UI: Record<Lang, { title: string; subtitle: string; cta: string }> = {
+  en: {
+    title: "All-in-One SaaS Marketplace",
+    subtitle:
+      "Discover powerful solutions designed to streamline your business operations and boost productivity",
+    cta: "Explore Products",
+  },
+  id: {
+    title: "Marketplace SaaS Serba Ada",
+    subtitle:
+      "Temukan solusi andal yang dirancang untuk menyederhanakan operasional bisnismu dan meningkatkan produktivitas",
+    cta: "Jelajahi Produk",
+  },
+};
 
-    // opsional: konten Inggris eksplisit dari backend
-    name_en?: string;
-    tagline_en?: string;
-    shortDescription_en?: string;
-  };
-  ctaHrefTry?: string;
-  ctaHrefPricing?: string;
+// Fallback baca cookie/localStorage bila context belum siap
+function getLangFromStorage(): Lang {
+  try {
+    // cookie
+    const cookies = document.cookie || "";
+    const get = (k: string) =>
+      (cookies.match(new RegExp(`(?:^|; )${k}=([^;]*)`)) || [])[1];
+    const ck =
+      decodeURIComponent(get("agile.lang") || "") ||
+      decodeURIComponent(get("agile_lang") || "") ||
+      decodeURIComponent(get("lang") || "");
+    if (ck === "en") return "en";
+
+    // localStorage
+    const ls =
+      (localStorage.getItem("agile:lang") || "").replace(/"/g, "") || "";
+    if (ls === "en") return "en";
+  } catch {}
+  return "id";
 }
 
-export function ProductHero({
-  product,
-  ctaHrefTry = "/signup",
-  ctaHrefPricing = "/pricing",
-}: ProductHeroProps) {
-  const { lang } = useLanguage();
+export default function ProductsHero() {
+  // 1) Coba context (kalau LanguageProvider ada)
+  let ctxLang: Lang | undefined = undefined;
+  try {
+    // @ts-ignore – provider mungkin tidak ada di tree tertentu
+    ctxLang = (useLanguage()?.lang as Lang | undefined) ?? undefined;
+  } catch {
+    // ignore jika dipakai di luar provider
+  }
 
-  const UI: Record<Lang, { try: string; pricing: string; alt: string }> = {
-    en: {
-      try: "Try for Free",
-      pricing: "View Pricing",
-      alt: `${product.name_en ?? product.name} interface`,
-    },
-    id: {
-      try: "Coba Gratis",
-      pricing: "Lihat Harga",
-      alt: `Antarmuka ${product.name_en ?? product.name}`,
-    },
-  };
+  // 2) State lokal dengan fallback cookie/LS + dengarkan event
+  const [lang, setLang] = useState<Lang>(ctxLang || getLangFromStorage());
 
-  // pilih payload sesuai bahasa; gunakan *_en bila tersedia untuk EN
-  const name = lang === "en" ? product.name_en ?? product.name : product.name;
-  const tagline =
-    lang === "en" ? product.tagline_en ?? product.tagline : product.tagline;
-  const shortDesc =
-    lang === "en"
-      ? product.shortDescription_en ?? product.shortDescription
-      : product.shortDescription;
+  // Sinkronkan bila context berubah
+  useEffect(() => {
+    if (ctxLang && ctxLang !== lang) setLang(ctxLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxLang]);
+
+  // Dengarkan broadcast custom event dari LanguageSwitcher
+  useEffect(() => {
+    const onChange = (e: any) => {
+      const v = e?.detail?.lang as Lang | undefined;
+      if (v === "en" || v === "id") setLang(v);
+    };
+    window.addEventListener("agile:lang-changed", onChange as any);
+    return () =>
+      window.removeEventListener("agile:lang-changed", onChange as any);
+  }, []);
+
+  const T = useMemo(() => UI[lang === "en" ? "en" : "id"], [lang]);
 
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-background via-background to-muted py-16 sm:py-24 lg:py-32">
+    <section
+      id="products-hero"
+      className="relative overflow-hidden bg-gradient-to-br from-indigo-500 via-indigo-500 to-blue-500 py-16 sm:py-24 text-white"
+    >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div className="text-center lg:text-left">
-            <h1 className="font-serif font-bold text-4xl sm:text-5xl lg:text-6xl text-foreground mb-6">
-              {name}
-            </h1>
+        <div className="mx-auto max-w-3xl text-center" key={lang}>
+          <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight">
+            {T.title}
+          </h1>
+          <p className="mt-4 text-lg sm:text-xl text-white/90">{T.subtitle}</p>
 
-            <p className="text-lg sm:text-xl text-muted-foreground mb-8 leading-relaxed">
-              {tagline || shortDesc}
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center">
-              <Link href={ctaHrefTry}>
-                <Button
-                  size="lg"
-                  className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600 text-lg px-8 py-3"
-                >
-                  {UI[lang].try}
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-              </Link>
-
-              <Link href={ctaHrefPricing}>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="text-lg px-8 py-3 bg-transparent"
-                >
-                  {UI[lang].pricing}
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          <div className="relative">
-            <div className="aspect-[4/3] relative overflow-hidden rounded-2xl shadow-2xl">
-              <Image
-                src={product.heroImage || "/placeholder.svg"}
-                alt={UI[lang].alt}
-                fill
-                className="object-cover"
-                priority
-              />
-            </div>
+          <div className="mt-8">
+            <Link href="#products-grid" aria-label={T.cta}>
+              <Button
+                size="lg"
+                className="bg-white text-indigo-600 hover:bg-blue-50"
+              >
+                {T.cta}
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* Background decoration */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-gradient-to-r from-primary/10 to-secondary/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-secondary/10 to-primary/10 rounded-full blur-3xl" />
+      {/* dekorasi */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-10 -right-10 h-48 w-48 rounded-full bg-white/20 blur-3xl" />
+        <div className="absolute -bottom-16 -left-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
       </div>
     </section>
   );
 }
-
-export default ProductHero;

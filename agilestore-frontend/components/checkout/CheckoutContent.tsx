@@ -30,8 +30,6 @@ import {
   Lock,
   Calendar,
   Clock,
-  DollarSign,
-  Settings,
 } from "lucide-react";
 
 import {
@@ -54,8 +52,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../ui/dialog";
+} from "@/components/ui/dialog";
 import { DialogClose } from "@radix-ui/react-dialog";
+import { useLanguage } from "@/components/LanguageProvider";
 
 /* ============================================================================
    TYPES
@@ -64,6 +63,7 @@ type ProductRow = {
   product_code: string;
   product_name: string;
   description?: string;
+  description_en?: string;
 };
 
 type ProductDetail = {
@@ -71,12 +71,15 @@ type ProductDetail = {
     product_code: string;
     product_name: string;
     description?: string;
+    description_en?: string;
     status?: string;
   };
   packages: Array<{
     package_code: string;
     name: string;
+    name_en?: string;
     description?: string;
+    description_en?: string;
     status?: string;
     order_number?: number;
     pricelist: Array<{
@@ -126,6 +129,175 @@ export interface CheckoutData {
 }
 
 /* ============================================================================
+   i18n helpers
+============================================================================ */
+function makeT(langIn?: "id" | "en") {
+  const lang: "id" | "en" = langIn === "en" ? "en" : "id";
+  const T = {
+    // headings
+    pageTitle: {
+      en: "Complete Your Purchase",
+      id: "Selesaikan Pembelian Anda",
+    },
+    pageSubtitle: {
+      en: "Secure checkout powered by industry-leading encryption",
+      id: "Checkout aman dengan enkripsi berkelas industri",
+    },
+
+    // contact
+    contactInfo: { en: "Contact Information", id: "Informasi Kontak" },
+    fullName: { en: "Full Name", id: "Nama Lengkap" },
+    fullNamePH: { en: "Enter your full name", id: "Masukkan nama lengkap" },
+    email: { en: "Email Address", id: "Alamat Email" },
+    emailPH: { en: "Enter your email", id: "Masukkan email" },
+    phone: { en: "Phone/WhatsApp", id: "Telepon/WhatsApp" },
+    phonePH: { en: "0812 3456 7890", id: "0812 3456 7890" },
+    continueWithGoogle: {
+      en: "Continue with Google",
+      id: "Lanjutkan dengan Google",
+    },
+    emailInvalid: {
+      en: "Please enter a valid email address",
+      id: "Mohon masukkan alamat email yang valid",
+    },
+    phoneInvalid: {
+      en: "Phone number must be 8-15 digits",
+      id: "Nomor telepon harus 8–15 digit",
+    },
+    googleFailed: { en: "Google sign-in failed", id: "Masuk Google gagal" },
+
+    // plan & duration
+    planDuration: { en: "Plan & Duration", id: "Paket & Durasi" },
+    product: { en: "Product", id: "Produk" },
+    package: { en: "Package", id: "Paket" },
+    duration: { en: "Duration", id: "Durasi" },
+    selectProductPH: { en: "Select a product", id: "Pilih produk" },
+    loadingProductsPH: { en: "Loading products...", id: "Memuat produk..." },
+    selectPackagePH: { en: "Select a package", id: "Pilih paket" },
+    loadingPackagesPH: { en: "Loading packages...", id: "Memuat paket..." },
+    chooseProductFirst: {
+      en: "Choose product first",
+      id: "Pilih produk terlebih dahulu",
+    },
+    active: { en: "Active", id: "Aktif" },
+
+    // voucher
+    voucherTitle: { en: "Voucher / Promo Code", id: "Voucher / Kode Promo" },
+    voucherPH: { en: "Enter voucher code", id: "Masukkan kode voucher" },
+    apply: { en: "Apply", id: "Terapkan" },
+    applying: { en: "Applying...", id: "Menerapkan..." },
+    applied: { en: "Applied", id: "Diterapkan" },
+    remove: { en: "Remove", id: "Hapus" },
+    voucherAppliedNote: {
+      en: "Voucher applied. Final price is temporarily computed on FE.",
+      id: "Voucher diterapkan. Harga akhir untuk sementara dihitung di FE.",
+    },
+
+    // order summary
+    orderSummary: { en: "Order Summary", id: "Ringkasan Pesanan" },
+    subtotal: { en: "Subtotal", id: "Subtotal" },
+    discount: { en: "Discount", id: "Diskon" },
+    tax: { en: "Tax (11%)", id: "Pajak (11%)" },
+    taxIncluded: {
+      en: "* Tax included in price",
+      id: "* Pajak sudah termasuk harga",
+    },
+    total: { en: "Total", id: "Total" },
+    placeOrder: { en: "Place Order", id: "Buat Pesanan" },
+    processing: { en: "Processing...", id: "Memproses..." },
+    terms: { en: "Terms of Service", id: "Syarat Layanan" },
+    privacy: { en: "Privacy Policy", id: "Kebijakan Privasi" },
+    agree1: {
+      en: "By completing your purchase, you agree to our",
+      id: "Dengan menyelesaikan pembelian, Anda menyetujui",
+    },
+    and: { en: "and", id: "dan" },
+    secureLine: {
+      en: "Secure payment powered by 256-bit SSL encryption",
+      id: "Pembayaran aman dengan enkripsi SSL 256-bit",
+    },
+
+    // modal active product
+    youAlreadyHave: {
+      en: "You already have this product",
+      id: "Anda sudah memiliki produk ini",
+    },
+    alreadyHaveDesc: {
+      en: "You already have an active subscription for",
+      id: "Anda sudah memiliki langganan aktif untuk",
+    },
+    currentPackage: { en: "Current package", id: "Paket saat ini" },
+    endDate: { en: "End date", id: "Tanggal berakhir" },
+    notAllowedNew: {
+      en: "System does not allow new purchase for the same product. Choose Renew to extend duration, or Upgrade to change package.",
+      id: "Sistem tidak mengizinkan pembelian baru untuk produk yang sama. Pilih Perpanjang untuk menambah durasi, atau Upgrade untuk ganti paket.",
+    },
+    cancel: { en: "Cancel", id: "Batal" },
+    renew: { en: "Renew", id: "Perpanjang" },
+    upgrade: { en: "Upgrade", id: "Upgrade" },
+
+    // set initial password
+    setPwTitle: {
+      en: "Set Password for Your Account",
+      id: "Setel Password untuk Akun Anda",
+    },
+    setPwDesc: {
+      en: "Your account was created automatically. Set a password to login permanently. You can also use the 6-digit code sent to your email.",
+      id: "Akun Anda dibuat otomatis. Setel password agar bisa login permanen. Anda juga dapat menggunakan kode 6 digit yang dikirim ke email.",
+    },
+    newPw: { en: "New password", id: "Password baru" },
+    confirmPw: { en: "Confirm password", id: "Konfirmasi password" },
+    saving: { en: "Saving...", id: "Menyimpan..." },
+    savePw: { en: "Save Password", id: "Simpan Password" },
+    close: { en: "Close", id: "Tutup" },
+    pwTooShort: {
+      en: "Password must be at least 8 characters",
+      id: "Password minimal 8 karakter",
+    },
+    pwNotMatch: {
+      en: "Password confirmation does not match",
+      id: "Konfirmasi password tidak cocok",
+    },
+
+    // action / errors
+    mustPickPPP: {
+      en: "Please choose product, package, and duration first.",
+      id: "Silakan pilih produk, paket, dan durasi terlebih dahulu.",
+    },
+    invalidDuration: { en: "Invalid duration.", id: "Durasi tidak valid." },
+    emailRequired: { en: "Email is required", id: "Email wajib diisi" },
+    cannotBuy: {
+      en: "Cannot purchase",
+      id: "Tidak bisa membeli",
+    },
+    cannotBuyDesc: {
+      en: "This email already has an active subscription for the product. Please login.",
+      id: "Email ini sudah memiliki langganan aktif untuk produk tersebut. Silakan login.",
+    },
+    activeCheckFailed: {
+      en: "Failed to check active subscription. Please try again.",
+      id: "Gagal memeriksa langganan aktif. Silakan coba lagi.",
+    },
+    accountCreated: {
+      en: "Account created. You are temporarily signed in. After successful payment, please set your password.",
+      id: "Akun dibuat. Anda masuk sementara. Setelah pembayaran berhasil, silakan set password.",
+    },
+    emailExists: {
+      en: "Email already registered",
+      id: "Email sudah terdaftar",
+    },
+    emailExistsDesc: {
+      en: "The email you entered is already registered. Please login.",
+      id: "Email yang Anda masukkan sudah terdaftar. Silakan login.",
+    },
+    failedOrder: { en: "Failed Order", id: "Gagal Membuat Pesanan" },
+  } as const;
+
+  const t = <K extends keyof typeof T>(k: K) => T[k][lang];
+  return { t, lang };
+}
+
+/* ============================================================================
    HELPERS
 ============================================================================ */
 function normalizeCustomerToContact(u: any) {
@@ -162,19 +334,95 @@ function buildPriceMap(detail: ProductDetail) {
   return map;
 }
 
+// Durasi -> label sesuai bahasa UI
+function durationLabel(months: number, lang: "id" | "en") {
+  if (lang === "id") return months === 1 ? "1 Bulan" : `${months} Bulan`;
+  return months === 1 ? "1 Month" : `${months} Months`;
+}
+
 /* ============================================================================
-   SUB-COMPONENTS
+   AUTO TRANSLATE HOOK (paksa translate saat lang === "id" & tidak ada *_en)
+   Memakai endpoint /api/translate-batch (proxy ke Laravel).
+============================================================================ */
+function useAutoTranslate(
+  text: string | undefined,
+  lang: "id" | "en",
+  force: boolean = false,
+  from: "en" | "id" = "en",
+  to: "en" | "id" = "id"
+) {
+  const [out, setOut] = useState<string>(text || "");
+  const src = text || "";
+
+  useEffect(() => {
+    if (!src) return setOut("");
+
+    // Jika target EN & tidak dipaksa, pakai teks asli
+    if (lang === "en" && !force && to === "id") {
+      setOut(src);
+      return;
+    }
+
+    // Kalau tidak force, hemat request dengan heuristik sederhana
+    const looksEnglish =
+      /^[\x00-\x7F\s.,;:'"()\-/%&!?0-9]+$/.test(src) &&
+      /\b(the|and|for|with|application|water|meter|monitoring)\b/i.test(src);
+
+    const shouldTranslate =
+      (lang === "id" && (force || looksEnglish)) ||
+      (lang === "en" && to === "en" && force);
+
+    if (!shouldTranslate) {
+      setOut(src);
+      return;
+    }
+
+    let aborted = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/translate-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texts: [src], from, to }),
+        });
+        const json = await res.json();
+        const translated =
+          json?.data?.[0] ??
+          json?.result?.[0] ??
+          json?.translations?.[0] ??
+          src;
+        if (!aborted) setOut(String(translated));
+      } catch (e) {
+        console.warn("translate-batch failed, fallback to original:", e);
+        if (!aborted) setOut(src);
+      }
+    })();
+
+    return () => {
+      aborted = true;
+    };
+  }, [src, lang, force, from, to]);
+
+  return out;
+}
+
+/* ============================================================================
+   SUB-COMPONENTS: ContactInformation
 ============================================================================ */
 function ContactInformation({
   data,
   onChange,
   isLoggedIn,
   onGoogleSuccess,
+  t,
+  lang,
 }: {
   data: CheckoutData["contact"];
   onChange: (data: CheckoutData["contact"]) => void;
   isLoggedIn: boolean;
   onGoogleSuccess: (cred: any) => void;
+  t: ReturnType<typeof makeT>["t"];
+  lang: "id" | "en";
 }) {
   const handleChange = (field: keyof CheckoutData["contact"], value: string) =>
     onChange({ ...data, [field]: value });
@@ -191,22 +439,21 @@ function ContactInformation({
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
           <User className="h-5 w-5 text-indigo-500" />
-          Contact Information
+          {t("contactInfo")}
         </CardTitle>
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {/* Form SELALU tampil */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="fullName">
-              Full Name<span className="text-red-600">*</span>
+              {t("fullName")} <span className="text-red-600">*</span>
             </Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 id="fullName"
-                placeholder="Enter your full name"
+                placeholder={t("fullNamePH")}
                 value={data.fullName}
                 onChange={(e) => handleChange("fullName", e.target.value)}
                 className="pl-10"
@@ -217,14 +464,14 @@ function ContactInformation({
 
           <div className="space-y-2">
             <Label htmlFor="email">
-              Email Address<span className="text-red-600">*</span>
+              {t("email")} <span className="text-red-600">*</span>
             </Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 id="email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder={t("emailPH")}
                 value={data.email}
                 onChange={(e) => handleChange("email", e.target.value)}
                 readOnly={isLoggedIn}
@@ -237,22 +484,20 @@ function ContactInformation({
               />
             </div>
             {data.email && !validateEmail(data.email) && (
-              <p className="text-sm text-red-600">
-                Please enter a valid email address
-              </p>
+              <p className="text-sm text-red-600">{t("emailInvalid")}</p>
             )}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="phone">
-              Phone/WhatsApp<span className="text-red-600">*</span>
+              {t("phone")} <span className="text-red-600">*</span>
             </Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
                 id="phone"
                 type="tel"
-                placeholder="0812 3456 7890"
+                placeholder={t("phonePH")}
                 value={data.phone}
                 onChange={(e) => handleChange("phone", e.target.value)}
                 className={`pl-10 ${
@@ -264,29 +509,46 @@ function ContactInformation({
               />
             </div>
             {data.phone && !validatePhone(data.phone) && (
-              <p className="text-sm text-red-600">
-                Phone number must be 8-15 digits
-              </p>
+              <p className="text-sm text-red-600">{t("phoneInvalid")}</p>
             )}
           </div>
         </div>
-        {/* Saat BELUM login, tampilkan tombol Google di atas form */}
+
         {!isLoggedIn && (
           <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={onGoogleSuccess}
-              onError={() =>
-                toast({
-                  variant: "destructive",
-                  title: "Google sign-in failed",
-                })
-              }
-              useOneTap={false}
-              theme="outline"
-              size="large"
-              text="continue_with"
-              shape="pill"
-            />
+            {/* Wrapper tombol Google agar label bisa ditranslate tanpa nabrak */}
+            <div className="relative w-[260px] h-[40px]">
+              {/* Tombol asli */}
+              <div className="absolute inset-0">
+                <GoogleLogin
+                  key={lang}
+                  locale={lang}
+                  onSuccess={onGoogleSuccess}
+                  onError={() =>
+                    toast({ variant: "destructive", title: t("googleFailed") })
+                  }
+                  useOneTap={false}
+                  theme="outline"
+                  size="large"
+                  text="continue_with"
+                  shape="pill"
+                />
+              </div>
+
+              {/* Mask putih menutup teks default Google, ikon kiri tetap tampil */}
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 right-0 rounded-full bg-white"
+                style={{ left: 44, zIndex: 2 }}
+              />
+
+              {/* Label terjemahan di atas mask */}
+              <span
+                className="pointer-events-none absolute inset-0 flex items-center justify-center text-[13px] font-medium text-[#1f1f1f]"
+                style={{ zIndex: 3, paddingLeft: 8, paddingRight: 12 }}
+              >
+                {t("continueWithGoogle")}
+              </span>
+            </div>
           </div>
         )}
       </CardContent>
@@ -294,6 +556,9 @@ function ContactInformation({
   );
 }
 
+/* ============================================================================
+   SUB-COMPONENTS: PlanDuration
+============================================================================ */
 function PlanDuration({
   data,
   products,
@@ -303,6 +568,8 @@ function PlanDuration({
   onChange,
   onChangeProduct,
   onChangePackage,
+  t,
+  lang,
 }: {
   data: CheckoutData["plan"];
   products: ProductRow[];
@@ -312,11 +579,12 @@ function PlanDuration({
   onChange: (plan: CheckoutData["plan"]) => void;
   onChangeProduct: (productCode: string) => void;
   onChangePackage: (packageCode: string) => void;
+  t: ReturnType<typeof makeT>["t"];
+  lang: "id" | "en";
 }) {
   const set = (patch: Partial<CheckoutData["plan"]>) =>
     onChange({ ...data, ...patch });
 
-  const packages = productDetail?.packages ?? [];
   const durations = useMemo(
     () =>
       (productDetail?.durations ?? [])
@@ -325,23 +593,51 @@ function PlanDuration({
     [productDetail]
   );
 
+  const selectedProduct = products.find((p) => p.product_code === data.product);
   const selectedProductName =
-    products.find((p) => p.product_code === data.product)?.product_name ??
+    selectedProduct?.product_name ??
     productDetail?.product?.product_name ??
     data.product;
+
+  // sumber deskripsi: ambil *_en bila lang EN; ambil ID kalau ID; kalau EN kosong → fallback nanti
+  const rawProductDesc =
+    lang === "en"
+      ? productDetail?.product?.description_en ??
+        selectedProduct?.description_en ??
+        productDetail?.product?.description ??
+        selectedProduct?.description
+      : productDetail?.product?.description ??
+        selectedProduct?.description ??
+        productDetail?.product?.description_en ??
+        selectedProduct?.description_en;
+
+  const hasDescEn = Boolean(
+    productDetail?.product?.description_en || selectedProduct?.description_en
+  );
+
+  // Paksa translate → ID jika lang === "id" dan *_en memang tidak ada
+  const productDesc = useAutoTranslate(
+    rawProductDesc,
+    lang,
+    lang === "id" && !hasDescEn,
+    "en",
+    "id"
+  );
 
   return (
     <Card className="bg-white shadow-sm border border-gray-200">
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
           <Calendar className="h-5 w-5 text-indigo-500" />
-          Plan & Duration
+          {t("planDuration")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 px-6 pb-8">
         {/* Product */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold text-gray-900">Product</Label>
+          <Label className="text-sm font-semibold text-gray-900">
+            {t("product")}
+          </Label>
           {!data.product ? (
             <Select
               value={data.product}
@@ -351,8 +647,8 @@ function PlanDuration({
                 <SelectValue
                   placeholder={
                     loading.products
-                      ? "Loading products..."
-                      : "Select a product"
+                      ? t("loadingProductsPH")
+                      : t("selectProductPH")
                   }
                 />
               </SelectTrigger>
@@ -367,9 +663,9 @@ function PlanDuration({
                       <div className="font-medium text-base">
                         {p.product_name}
                       </div>
-                      {!!p.description && (
+                      {!!(lang === "en" ? p.description_en : p.description) && (
                         <div className="text-sm text-gray-500 mt-2 leading-relaxed">
-                          {p.description}
+                          {lang === "en" ? p.description_en : p.description}
                         </div>
                       )}
                     </div>
@@ -382,9 +678,9 @@ function PlanDuration({
               <div className="font-bold text-lg text-gray-900">
                 {selectedProductName}
               </div>
-              <div className="text-sm text-gray-600 mt-1">
-                {productDetail?.product?.description}
-              </div>
+              {/* {!!productDesc && (
+                <div className="text-sm text-gray-600 mt-1">{productDesc}</div>
+              )} */}
             </div>
           )}
         </div>
@@ -392,7 +688,7 @@ function PlanDuration({
         {/* Package */}
         <div className="space-y-3">
           <Label className="text-sm font-semibold text-gray-900">
-            <span className="inline-flex items-center gap-2">Package</span>
+            {t("package")}
           </Label>
           <Select
             value={data.package}
@@ -403,41 +699,51 @@ function PlanDuration({
               <SelectValue
                 placeholder={
                   !data.product
-                    ? "Pilih produk terlebih dahulu"
+                    ? t("chooseProductFirst")
                     : loading.detail
-                    ? "Loading packages..."
-                    : "Select a package"
+                    ? t("loadingPackagesPH")
+                    : t("selectPackagePH")
                 }
               />
             </SelectTrigger>
             <SelectContent className="min-w-[350px]">
-              {(productDetail?.packages ?? []).map((pkg) => (
-                <SelectItem
-                  key={pkg.package_code}
-                  value={pkg.package_code}
-                  className="py-4 px-4"
-                >
-                  <div className="flex items-center justify-between gap-3 py-2 px-1 w-full">
-                    <div className="flex-1">
-                      <div className="font-medium text-base">{pkg.name}</div>
+              {(productDetail?.packages ?? []).map((pkg) => {
+                const label =
+                  lang === "en"
+                    ? pkg.name_en ?? pkg.name
+                    : pkg.name ?? pkg.name_en;
+                return (
+                  <SelectItem
+                    key={pkg.package_code}
+                    value={pkg.package_code}
+                    className="py-4 px-4"
+                  >
+                    <div className="flex items-center justify-between gap-3 py-2 px-1 w-full">
+                      <div className="flex-1">
+                        <div className="font-medium text-base">{label}</div>
+                      </div>
+                      {pkg.status === "active" && (
+                        <Badge className="bg-indigo-100 text-indigo-800 ml-2">
+                          {t("active")}
+                        </Badge>
+                      )}
                     </div>
-                    {pkg.status === "active" && (
-                      <Badge className="bg-indigo-100 text-indigo-800 ml-2">
-                        Active
-                      </Badge>
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
           {!!data.package && (
             <p className="text-xs text-gray-500">
-              {
-                productDetail?.packages?.find(
+              {(() => {
+                const hit = productDetail?.packages?.find(
                   (p) => p.package_code === data.package
-                )?.description
-              }
+                );
+                if (!hit) return "";
+                return lang === "en"
+                  ? hit.description_en ?? hit.description ?? ""
+                  : hit.description ?? hit.description_en ?? "";
+              })()}
             </p>
           )}
         </div>
@@ -445,7 +751,7 @@ function PlanDuration({
         {/* Duration */}
         <div className="space-y-3">
           <Label className="text-sm font-semibold text-gray-900">
-            Duration
+            {t("duration")}
           </Label>
           <div className="flex-col gap-5 flex-wrap">
             {durations.map((d) => {
@@ -466,7 +772,7 @@ function PlanDuration({
                   }`}
                 >
                   <Clock className="h-4 w-4 mr-2" />
-                  {d.name}
+                  {durationLabel(d.length, lang)}
                   {!!priceMap[data.package]?.[d.length] && (
                     <span className="ml-2 text-xs opacity-80">
                       Rp{" "}
@@ -478,81 +784,22 @@ function PlanDuration({
             })}
           </div>
         </div>
-
-        {/* Currency & Tax Mode */}
-        {/* <div className="grid grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold text-gray-900">
-              Currency
-            </Label>
-            <Select
-              value={data.currency}
-              onValueChange={(value: "IDR" | "USD") =>
-                onChange({ ...data, currency: value })
-              }
-            >
-              <SelectTrigger className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 h-10 w-fit min-w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-[200px]">
-                <SelectItem value="IDR" className="py-3 px-4">
-                  <div className="flex items-center gap-3 py-1 px-1">
-                    <DollarSign className="h-4 w-4 text-gray-400" />
-                    <span className="text-base">IDR</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="USD" className="py-3 px-4">
-                  <div className="flex items-center gap-3 py-1 px-1">
-                    <DollarSign className="h-4 w-4 text-gray-400" />
-                    <span className="text-base">USD</span>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold text-gray-900">
-              Tax Mode
-            </Label>
-            <Select
-              value={data.taxMode}
-              onValueChange={(value: "inclusive" | "exclusive") =>
-                onChange({ ...data, taxMode: value })
-              }
-            >
-              <SelectTrigger className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 h-10">
-                <Settings className="h-4 w-4 text-gray-400 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-[180px]">
-                <SelectItem value="inclusive" className="py-3 px-4">
-                  <div className="flex items-center gap-3 py-1 px-1">
-                    <Settings className="h-4 w-4 text-gray-400" />
-                    <span className="text-base">Tax Inclusive</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="exclusive" className="py-3 px-4">
-                  <div className="flex items-center gap-3 py-1 px-1">
-                    <Settings className="h-4 w-4 text-gray-400" />
-                    <span className="text-base">Tax Exclusive</span>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div> */}
       </CardContent>
     </Card>
   );
 }
 
+/* ============================================================================
+   SUB-COMPONENTS: VoucherCode
+============================================================================ */
 function VoucherCode({
   data,
   onChange,
+  t,
 }: {
   data: CheckoutData["voucher"];
   onChange: (data: CheckoutData["voucher"]) => void;
+  t: ReturnType<typeof makeT>["t"];
 }) {
   const [inputCode, setInputCode] = useState(data.code);
   const [isApplying, setIsApplying] = useState(false);
@@ -578,7 +825,7 @@ function VoucherCode({
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
           <Ticket className="h-5 w-5 text-indigo-500" />
-          Voucher / Promo Code
+          {t("voucherTitle")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -586,7 +833,7 @@ function VoucherCode({
           <div className="space-y-4">
             <div className="flex gap-2">
               <Input
-                placeholder="Enter voucher code"
+                placeholder={t("voucherPH")}
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()}
@@ -596,7 +843,7 @@ function VoucherCode({
                 disabled={!inputCode.trim() || isApplying}
                 className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
               >
-                {isApplying ? "Applying..." : "Apply"}
+                {isApplying ? t("applying") : t("apply")}
               </Button>
             </div>
             {error && (
@@ -618,11 +865,11 @@ function VoucherCode({
                     {data.code}
                   </span>
                   <Badge className="bg-green-100 text-green-800 border-green-200">
-                    Applied
+                    {t("applied")}
                   </Badge>
                 </div>
                 <p className="text-xs text-green-700">
-                  Voucher applied. Final price computed here (FE) sementara.
+                  {t("voucherAppliedNote")}
                 </p>
               </div>
             </div>
@@ -632,7 +879,7 @@ function VoucherCode({
               onClick={handleRemoveVoucher}
               className="text-green-700 hover:text-green-900 hover:bg-green-100"
             >
-              Remove
+              {t("remove")}
             </Button>
           </div>
         )}
@@ -641,6 +888,9 @@ function VoucherCode({
   );
 }
 
+/* ============================================================================
+   SUB-COMPONENTS: OrderSummary
+============================================================================ */
 function OrderSummary({
   checkoutData,
   productDetail,
@@ -648,6 +898,8 @@ function OrderSummary({
   isValid,
   isLoading,
   onPlaceOrder,
+  t,
+  lang,
 }: {
   checkoutData: CheckoutData;
   productDetail: ProductDetail | null;
@@ -655,13 +907,15 @@ function OrderSummary({
   isValid: boolean;
   isLoading: boolean;
   onPlaceOrder: () => void;
+  t: ReturnType<typeof makeT>["t"];
+  lang: "id" | "en";
 }) {
   const plan = checkoutData.plan;
   const taxable = Math.max(
     0,
     (priceMap[plan.package]?.[plan.duration] ?? 0) -
       (checkoutData.voucher.discount || 0)
-  ); // keep same calc style below
+  );
   const basePrice = priceMap[plan.package]?.[plan.duration] ?? 0;
   const discount = Math.max(0, checkoutData.voucher.discount || 0);
   const tax = plan.taxMode === "exclusive" ? Math.round(taxable * 0.11) : 0;
@@ -674,25 +928,38 @@ function OrderSummary({
       ? `IDR ${price.toLocaleString("id-ID")}`
       : `$${(price / 15000).toFixed(2)}`;
 
-  const getDurationLabel = (m: number) =>
-    m === 1
-      ? "1 Month"
-      : m === 6
-      ? "6 Months"
-      : m === 12
-      ? "12 Months"
-      : `${m} Months`;
+  const getDurationLabel = (m: number) => durationLabel(m, lang);
 
-  const getPackageLabel = (pkg: string) =>
-    productDetail?.packages.find((p) => p.package_code === pkg)?.name ??
-    pkg.charAt(0).toUpperCase() + pkg.slice(1);
+  const getPackageLabel = (pkg: string) => {
+    const hit = productDetail?.packages?.find((p) => p.package_code === pkg);
+    if (!hit) return pkg.charAt(0).toUpperCase() + pkg.slice(1);
+    return lang === "en" ? hit.name_en ?? hit.name : hit.name ?? hit.name_en;
+  };
+
+  // Raw desc & status *_en, lalu paksa translate ke ID bila *_en tidak ada
+  const rawDesc =
+    lang === "en"
+      ? productDetail?.product?.description_en ??
+        productDetail?.product?.description
+      : productDetail?.product?.description ??
+        productDetail?.product?.description_en;
+
+  const hasDescEn2 = Boolean(productDetail?.product?.description_en);
+
+  const productDesc = useAutoTranslate(
+    rawDesc,
+    lang,
+    lang === "id" && !hasDescEn2,
+    "en",
+    "id"
+  );
 
   return (
     <Card className="bg-white shadow-sm border border-gray-200 sticky top-8 rounded-xl">
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
           <ShoppingCart className="h-5 w-5 text-indigo-500" />
-          Order Summary
+          {t("orderSummary")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -702,11 +969,9 @@ function OrderSummary({
               <h3 className="font-bold text-base text-gray-900">
                 {productName}
               </h3>
-              {!!productDetail?.product?.description && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {productDetail.product.description}
-                </p>
-              )}
+              {/* {!!productDesc && (
+                <p className="text-sm text-gray-600 mt-1">{productDesc}</p>
+              )} */}
             </div>
             <div className="flex items-center gap-2">
               {!!plan.package && (
@@ -727,7 +992,7 @@ function OrderSummary({
 
         <div className="space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Subtotal</span>
+            <span className="text-gray-600">{t("subtotal")}</span>
             <span className="font-medium text-gray-600">
               {formatPrice(basePrice)}
             </span>
@@ -735,14 +1000,14 @@ function OrderSummary({
 
           {!!discount && (
             <div className="flex justify-between text-sm text-green-600">
-              <span>Discount</span>
+              <span>{t("discount")}</span>
               <span>-{formatPrice(discount)}</span>
             </div>
           )}
 
           {plan.taxMode === "exclusive" && !!tax && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Tax (11%)</span>
+              <span className="text-gray-600">{t("tax")}</span>
               <span className="font-medium text-gray-600">
                 {formatPrice(tax)}
               </span>
@@ -750,13 +1015,13 @@ function OrderSummary({
           )}
 
           {plan.taxMode === "inclusive" && (
-            <div className="text-xs text-gray-500">* Tax included in price</div>
+            <div className="text-xs text-gray-500">{t("taxIncluded")}</div>
           )}
 
           <Separator />
 
           <div className="flex justify-between text-lg font-bold">
-            <span className="text-gray-900">Total</span>
+            <span className="text-gray-900">{t("total")}</span>
             <span className="bg-gradient-to-r from-indigo-500 to-blue-500 bg-clip-text text-transparent">
               {formatPrice(total)}
             </span>
@@ -772,41 +1037,45 @@ function OrderSummary({
           {isLoading ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Processing...
+              {t("processing")}
             </>
           ) : (
             <>
               <Lock className="h-4 w-4 mr-2" />
-              Place Order • {formatPrice(total)}
+              {t("placeOrder")}
             </>
           )}
         </Button>
 
         <p className="text-xs text-gray-500 text-center">
-          By completing your purchase, you agree to our{" "}
+          {t("agree1")}{" "}
           <a href="/terms" className="text-indigo-600 hover:underline">
-            Terms of Service
+            {t("terms")}
           </a>{" "}
-          and{" "}
+          {t("and")}{" "}
           <a href="/privacy" className="text-indigo-600 hover:underline">
-            Privacy Policy
+            {t("privacy")}
           </a>
           .
         </p>
 
         <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
           <Shield className="h-3 w-3" />
-          <span>Secure payment powered by 256-bit SSL encryption</span>
+          <span>{t("secureLine")}</span>
         </div>
       </CardContent>
     </Card>
   );
 }
 
+/* ============================================================================
+   SUB-COMPONENTS: ActiveProductModal
+============================================================================ */
 function ActiveProductModal({
   open,
   onOpenChange,
   info,
+  t,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -817,66 +1086,52 @@ function ActiveProductModal({
     end_date?: string | null;
     existing_order_id?: string | null;
   } | null;
+  t: ReturnType<typeof makeT>["t"];
 }) {
   const router = useRouter();
-
   if (!info) return null;
 
-  const handleRenew = () => {
-    // const base = encodeURIComponent(String(info.existing_order_id ?? ""));
-    // router.push(`/orders/renew?base_order_id=${base}`);
-    router.push("/my-account");
-  };
-  const handleUpgrade = () => {
-    // const base = encodeURIComponent(String(info.existing_order_id ?? ""));
-    // router.push(`/orders/upgrade?base_order_id=${base}&product=${encodeURIComponent(info.product_code ?? "")}`);
-    router.push("/my-account");
-  };
+  const handleRenew = () => router.push("/my-account");
+  const handleUpgrade = () => router.push("/my-account");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-indigo-500" /> You already have this
-            product
+            <Shield className="h-5 w-5 text-indigo-500" /> {t("youAlreadyHave")}
           </DialogTitle>
           <DialogDescription>
-            Anda sudah memiliki langganan aktif untuk{" "}
-            <strong>{info.product_code}</strong>.
+            {t("alreadyHaveDesc")} <strong>{info.product_code}</strong>.
           </DialogDescription>
         </DialogHeader>
 
         <div className="mt-4 space-y-3">
           <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
-            <div className="text-sm text-gray-600">Current package</div>
+            <div className="text-sm text-gray-600">{t("currentPackage")}</div>
             <div className="font-medium text-gray-900">
               {info.package_name ?? info.package_code ?? "-"}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              End date: {info.end_date ?? "—"}
+              {t("endDate")}: {info.end_date ?? "—"}
             </div>
           </div>
 
-          <p className="text-sm text-gray-700">
-            Sistem tidak mengizinkan pembelian baru untuk produk yang sama.
-            Pilih Perpanjang (renew) untuk menambah durasi, atau Upgrade untuk
-            beralih paket.
-          </p>
+          <p className="text-sm text-gray-700">{t("notAllowedNew")}</p>
         </div>
 
         <DialogFooter className="mt-6 flex gap-2 justify-end">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("cancel")}
           </Button>
           <Button
             onClick={handleRenew}
             className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white"
           >
-            Perpanjang
+            {t("renew")}
           </Button>
           <Button onClick={handleUpgrade} variant="outline">
-            Upgrade Paket
+            {t("upgrade")}
           </Button>
         </DialogFooter>
 
@@ -887,14 +1142,16 @@ function ActiveProductModal({
 }
 
 /* ============================================================================ 
-   SetInitialPasswordModal (new small component included in this file)
+   SUB-COMPONENTS: SetInitialPasswordModal (light)
 ============================================================================ */
 function SetInitialPasswordModal({
   open,
   onOpenChange,
+  t,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  t: ReturnType<typeof makeT>["t"];
 }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -902,14 +1159,11 @@ function SetInitialPasswordModal({
 
   const handleSet = async () => {
     if (!newPassword || newPassword.length < 8) {
-      toast({ variant: "destructive", title: "Password minimal 8 karakter" });
+      toast({ variant: "destructive", title: t("pwTooShort") });
       return;
     }
     if (newPassword !== confirm) {
-      toast({
-        variant: "destructive",
-        title: "Password konfirmasi tidak cocok",
-      });
+      toast({ variant: "destructive", title: t("pwNotMatch") });
       return;
     }
     setLoading(true);
@@ -918,12 +1172,12 @@ function SetInitialPasswordModal({
         new_password: newPassword,
       });
       if (res?.data?.success) {
-        toast({ title: "Password berhasil disimpan" });
+        toast({ title: t("savePw") });
         onOpenChange(false);
       } else {
         toast({
           variant: "destructive",
-          title: res?.data?.message || "Gagal set password",
+          title: res?.data?.message || "Error",
         });
       }
     } catch (e: any) {
@@ -941,22 +1195,18 @@ function SetInitialPasswordModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Set Password untuk Akun Anda</DialogTitle>
+          <DialogTitle>{t("setPwTitle")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">
-            a Akun dibuat otomatis. Silakan set password agar dapat login
-            permanen. Anda juga bisa menggunakan kode 6-digit yang telah dikirim
-            ke email.
-          </p>
+          <p className="text-sm text-gray-600">{t("setPwDesc")}</p>
           <Input
-            placeholder="New password"
+            placeholder={t("newPw")}
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
           <Input
-            placeholder="Confirm password"
+            placeholder={t("confirmPw")}
             type="password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -964,10 +1214,10 @@ function SetInitialPasswordModal({
         </div>
         <DialogFooter className="mt-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Tutup
+            {t("close")}
           </Button>
           <Button onClick={handleSet} disabled={loading}>
-            {loading ? "Menyimpan..." : "Simpan Password"}
+            {loading ? t("saving") : t("savePw")}
           </Button>
         </DialogFooter>
         <DialogClose className="sr-only" />
@@ -980,6 +1230,9 @@ function SetInitialPasswordModal({
    MAIN CLIENT COMPONENT
 ============================================================================ */
 export default function CheckoutContent() {
+  const { lang } = useLanguage();
+  const { t } = makeT(lang as any);
+
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -1000,15 +1253,14 @@ export default function CheckoutContent() {
     voucher: { code: "", discount: 0 },
   });
 
-  // track real auth state (getCustomerMe)
+  // auth
   const [customerAuthenticated, setCustomerAuthenticated] = useState(false);
-
   const isLoggedIn = customerAuthenticated;
 
-  // cookie flag untuk middleware FE
+  // cookie flag
   const setAuthCookie = (persistent = true) => {
     const parts = ["customer_auth=1", "Path=/", "SameSite=Lax"];
-    if (persistent) parts.push("Max-Age=2592000"); // 30 hari
+    if (persistent) parts.push("Max-Age=2592000");
     document.cookie = parts.join("; ");
   };
 
@@ -1032,7 +1284,6 @@ export default function CheckoutContent() {
     existing_order_id?: string | null;
   } | null>(null);
 
-  // modal for set-password
   const [showSetPasswordModal, setShowSetPasswordModal] = useState(false);
 
   useEffect(() => {
@@ -1043,7 +1294,7 @@ export default function CheckoutContent() {
     setIsValid(Boolean(contactValid && planValid && paymentValid));
   }, [checkoutData]);
 
-  // Prefill profil bila sudah login
+  // Prefill profil
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -1055,6 +1306,7 @@ export default function CheckoutContent() {
           ...prev,
           contact: { ...prev.contact, ...contact },
         }));
+        setCustomerAuthenticated(true);
       } catch {}
     })();
     return () => {
@@ -1070,10 +1322,12 @@ export default function CheckoutContent() {
       try {
         const rows = await fetchProducts();
         if (!mounted) return;
-        const normalized: ProductRow[] = rows.map((r: any) => ({
-          product_code: r.product_code ?? r.code ?? r.slug ?? "",
-          product_name: r.product_name ?? r.name ?? "",
-          description: r.description ?? r.short_description ?? "",
+        const normalized: ProductRow[] = (rows || []).map((r: any) => ({
+          product_code: r?.product_code ?? r?.code ?? r?.slug ?? "",
+          product_name: r?.product_name ?? r?.name ?? "",
+          description: r?.description ?? r?.short_description ?? "",
+          description_en:
+            r?.description_en ?? r?.short_description_en ?? undefined,
         }));
         setProducts(normalized);
       } finally {
@@ -1106,35 +1360,38 @@ export default function CheckoutContent() {
 
         const detail: ProductDetail = {
           product: {
-            product_code: data.product?.product_code ?? prod,
-            product_name: data.product?.product_name ?? prod,
-            description: data.product?.description ?? "",
-            status: data.product?.status,
+            product_code: data?.product?.product_code ?? prod,
+            product_name: data?.product?.product_name ?? prod,
+            description_en: data?.product?.description_en,
+            description: data?.product?.description ?? "",
+            status: data?.product?.status,
           },
-          packages: (data.packages ?? []).map((p: any) => ({
-            package_code: p.package_code,
-            name: p.name,
-            description: p.description,
-            status: p.status,
-            order_number: p.order_number,
-            pricelist: p.pricelist ?? [],
+          packages: (data?.packages ?? []).map((p: any) => ({
+            package_code: p?.package_code,
+            name: p?.name,
+            name_en: p?.name_en,
+            description: p?.description,
+            description_en: p?.description_en,
+            status: p?.status,
+            order_number: p?.order_number,
+            pricelist: p?.pricelist ?? [],
           })),
-          durations: (data.durations ?? []).map((d: any) => ({
-            code: d.code,
-            name: d.name,
-            length: Number(d.length),
-            unit: d.unit,
-            is_default: Boolean(d.is_default),
+          durations: (data?.durations ?? []).map((d: any) => ({
+            code: d?.code,
+            name: d?.name,
+            length: Number(d?.length),
+            unit: d?.unit,
+            is_default: Boolean(d?.is_default),
           })),
         };
 
         setProductDetail(detail);
         setPriceMap(buildPriceMap(detail));
 
-        const pkgOk = detail.packages.some(
+        const pkgOk = detail.packages?.some(
           (x) => x.package_code === checkoutData.plan.package
         );
-        const durOk = detail.durations.some(
+        const durOk = detail.durations?.some(
           (d) => d.length === checkoutData.plan.duration
         );
 
@@ -1161,27 +1418,25 @@ export default function CheckoutContent() {
   const onChangePlan = (plan: CheckoutData["plan"]) =>
     setCheckoutData((prev) => ({ ...prev, plan }));
 
-  // handler Google login
+  // Google login
   const handleGoogleSuccess = async (cred: any) => {
     try {
       const idToken = cred?.credential;
       if (!idToken) throw new Error("No Google credential");
       await loginWithGoogle(idToken);
       setAuthCookie(true);
-
-      // Prefill contact
       const me = await getCustomerMe();
       const contactFromProfile = normalizeCustomerToContact(me);
       setCheckoutData((prev) => ({
         ...prev,
         contact: { ...prev.contact, ...contactFromProfile },
       }));
-
+      setCustomerAuthenticated(true);
       toast({ title: "Signed in with Google" });
     } catch (e: any) {
       toast({
         variant: "destructive",
-        title: "Google sign-in failed",
+        title: makeT(lang).t("googleFailed"),
         description: e?.message || "",
       });
     }
@@ -1191,29 +1446,30 @@ export default function CheckoutContent() {
     setIsPlacing(true);
     try {
       const { product, package: pkg, duration } = checkoutData.plan;
-      if (!product || !pkg || !duration)
-        throw new Error("Pilih produk, paket, dan durasi dahulu.");
+      if (!product || !pkg || !duration) {
+        throw new Error(makeT(lang).t("mustPickPPP"));
+      }
 
       const duration_code = resolveDurationCode(productDetail, duration);
-      if (!duration_code) throw new Error("Durasi tidak valid.");
+      if (!duration_code) throw new Error(makeT(lang).t("invalidDuration"));
 
       try {
-        // jika user belum login -> gunakan email yang diisi di form
         if (!customerAuthenticated) {
           const guestEmail = checkoutData.contact.email?.trim();
           if (!guestEmail) {
-            toast({ variant: "destructive", title: "Email wajib diisi" });
+            toast({
+              variant: "destructive",
+              title: makeT(lang).t("emailRequired"),
+            });
             setIsPlacing(false);
             return;
           }
-
           const check = await checkProduct(product, guestEmail);
           if (check?.has_active) {
             toast({
               variant: "destructive",
-              title: "Tidak bisa membeli",
-              description:
-                "Email ini sudah memiliki langganan aktif untuk produk tersebut. Silakan login untuk mengelola langganan Anda.",
+              title: makeT(lang).t("cannotBuy"),
+              description: makeT(lang).t("cannotBuyDesc"),
             });
             setIsPlacing(false);
             return;
@@ -1221,7 +1477,6 @@ export default function CheckoutContent() {
         } else {
           const check = await checkProduct(product);
           if (check?.has_active) {
-            // Terdapat langganan aktif -> tampilkan modal
             setActiveProductInfo({
               product_code: product,
               package_name: check.package_name ?? undefined,
@@ -1235,9 +1490,8 @@ export default function CheckoutContent() {
           }
         }
       } catch (e) {
-        // jika checkProduct gagal (network/auth), kita hentikan dan beri tahu user
         console.error("checkProduct failed", e);
-        toast({ title: "Gagal memeriksa langganan aktif. Silakan coba lagi." });
+        toast({ title: makeT(lang).t("activeCheckFailed") });
         setIsPlacing(false);
         return;
       }
@@ -1255,21 +1509,17 @@ export default function CheckoutContent() {
 
       const resp: any = await createPurchaseOrder(payload);
 
-      // If backend signals email already exists -> prompt login/reset and STOP
       if (resp?.email_already_exists) {
         toast({
           variant: "destructive",
-          title: "Email sudah terdaftar",
-          description:
-            "Email yang Anda masukkan sudah terdaftar. Silakan login.",
+          title: makeT(lang).t("emailExists"),
+          description: makeT(lang).t("emailExistsDesc"),
         });
         setIsPlacing(false);
         return;
       }
 
-      // If backend created account and returned token, we are probably auto-logged in (api already saved token)
       if (resp?.account_created || resp?.access_token) {
-        // If createPurchaseOrder didn't already update FE state, fetch profile and set flags
         try {
           const me = await getCustomerMe();
           if (me) {
@@ -1280,21 +1530,10 @@ export default function CheckoutContent() {
             setCustomerAuthenticated(true);
             setAuthCookie(true);
           }
-        } catch {
-          // ignore if me fails
-        }
-
-        toast({
-          title: "Akun dibuat",
-          description:
-            "Akun dibuat otomatis dan Anda sudah masuk sementara. Ketika sudah berhasil membayar silahkan masukkan password anda.",
-        });
-
-        // open set-password modal
-        // setShowSetPasswordModal(true);
+        } catch {}
+        toast({ title: makeT(lang).t("accountCreated") });
       }
 
-      // proceed to payment: resp.snap_token may exist
       const orderId = resp?.order_id;
       if (orderId && typeof window !== "undefined") {
         try {
@@ -1317,30 +1556,28 @@ export default function CheckoutContent() {
         await ensureSnap();
         openSnap(snapToken, orderId);
       } else if (orderId) {
-        // fallback to thank you / order detail
         router.push(`/orders/${orderId}`);
       } else {
-        throw new Error("Gagal membuat order");
+        throw new Error(makeT(lang).t("failedOrder"));
       }
     } catch (err: any) {
       console.error(err);
-      toast({ title: err?.message || "Failed Order" });
+      toast({ title: err?.message || makeT(lang).t("failedOrder") });
     } finally {
       setIsPlacing(false);
     }
   };
 
-  // === UI ===
   return (
     <div className="py-12 sm:py-16">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12">
             <h1 className="font-serif font-bold text-3xl sm:text-4xl text-gray-900 mb-4">
-              Complete Your Purchase
+              {makeT(lang).t("pageTitle")}
             </h1>
             <p className="text-lg text-gray-600">
-              Secure checkout powered by industry-leading encryption
+              {makeT(lang).t("pageSubtitle")}
             </p>
           </div>
 
@@ -1354,6 +1591,8 @@ export default function CheckoutContent() {
                 }
                 isLoggedIn={isLoggedIn}
                 onGoogleSuccess={handleGoogleSuccess}
+                t={makeT(lang).t}
+                lang={lang as "id" | "en"}
               />
 
               <PlanDuration
@@ -1362,11 +1601,14 @@ export default function CheckoutContent() {
                   product_code: r.product_code,
                   product_name: r.product_name,
                   description: r.description,
+                  description_en: r.description_en,
                 }))}
                 productDetail={productDetail}
                 priceMap={priceMap}
                 loading={loading}
-                onChange={onChangePlan}
+                onChange={(plan) =>
+                  setCheckoutData((prev) => ({ ...prev, plan }))
+                }
                 onChangeProduct={(productCode) => {
                   setCheckoutData((prev) => ({
                     ...prev,
@@ -1392,6 +1634,8 @@ export default function CheckoutContent() {
                     },
                   }));
                 }}
+                t={makeT(lang).t}
+                lang={lang as "id" | "en"}
               />
 
               <VoucherCode
@@ -1399,6 +1643,7 @@ export default function CheckoutContent() {
                 onChange={(voucher) =>
                   setCheckoutData((prev) => ({ ...prev, voucher }))
                 }
+                t={makeT(lang).t}
               />
             </div>
 
@@ -1412,9 +1657,12 @@ export default function CheckoutContent() {
                   isValid={isValid}
                   isLoading={isPlacing}
                   onPlaceOrder={handlePlaceOrder}
+                  t={makeT(lang).t}
+                  lang={lang as "id" | "en"}
                 />
               </div>
             </div>
+
             <ActiveProductModal
               open={showActiveModal}
               onOpenChange={(v) => {
@@ -1422,12 +1670,13 @@ export default function CheckoutContent() {
                 if (!v) setActiveProductInfo(null);
               }}
               info={activeProductInfo}
+              t={makeT(lang).t}
             />
 
-            {/* Set initial password modal */}
             <SetInitialPasswordModal
               open={showSetPasswordModal}
               onOpenChange={setShowSetPasswordModal}
+              t={makeT(lang).t}
             />
           </div>
         </div>
