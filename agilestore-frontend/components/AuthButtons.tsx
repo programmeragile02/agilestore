@@ -80,12 +80,12 @@ export default function AuthButtons() {
   };
 
   if (loading) {
-    return <Skeleton className="h-10 w-10 rounded-full bg-muted" />;
+    return <Skeleton className="h-10 w-10 rounded-full bg-muted mr-6" />;
   }
 
   if (!user) {
     return (
-      <div className="flex space-x-2">
+      <div className="flex space-x-2 pr-6">
         <Button variant="outline" size="sm" asChild>
           <Link href="/login">{L.login}</Link>
         </Button>
@@ -105,7 +105,7 @@ export default function AuthButtons() {
       <DropdownMenuTrigger asChild>
         <button
           className="w-10 h-10 rounded-full overflow-hidden border border-border bg-muted
-                     flex items-center justify-center ring-0 transition hover:scale-[1.02] cursor-pointer"
+                     flex items-center justify-center ring-0 transition hover:scale-[1.02] cursor-pointer mr-6"
           aria-label="Open profile menu"
         >
           {user.profile_photo_url || user.provider_avatar_url ? (

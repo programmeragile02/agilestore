@@ -546,35 +546,65 @@ export default function OrderDetailContent() {
 
   // check flag for set-password once
   useEffect(() => {
-    if (!id || flagChecked) return;
+    if (!id) return;
+    if (flagChecked) return;
     setFlagChecked(true);
-    const key = `agile:setpw:order:${id}`;
-    try {
-      if (typeof window !== "undefined") {
-        const v = localStorage.getItem(key);
-        if (v) {
-          const emailKey = `${key}:email`;
-          setSetPwEmail(localStorage.getItem(emailKey) ?? null);
 
-          if (
-            order &&
-            (order.status === "paid" ||
-              searchParams.get("status") === "success")
-          ) {
-            (async () => {
-              try {
-                await getCustomerMe();
+    const keyBase = `agile:setpw:order:${id}`;
+    try {
+      const auto = localStorage.getItem(`${keyBase}:auto`);
+      if (!auto) return; // hanya proceed kalau benar-benar auto-created flag ada
+
+      const storedEmail = localStorage.getItem(`${keyBase}:email`) ?? null;
+      setSetPwEmail(storedEmail);
+
+      // jika order sudah load & status paid (atau redirect status=success)
+      const orderPaidOrSuccess =
+        (order && order.status === "paid") ||
+        searchParams.get("status") === "success";
+
+      (async () => {
+        // jika user ter-autentikasi saat ini
+        try {
+          const me = await getCustomerMe().catch(() => null);
+          if (me) {
+            // hanya tampilkan modal jika email me === storedEmail
+            if (
+              storedEmail &&
+              me.email &&
+              me.email.toLowerCase() === storedEmail.toLowerCase()
+            ) {
+              if (orderPaidOrSuccess) {
                 setShowSetPwModal(true);
-                localStorage.removeItem(key);
-                localStorage.removeItem(emailKey);
-              } catch {
-                // ignore
+                // hapus flag karena sudah ditangani
+                localStorage.removeItem(`${keyBase}:auto`);
+                localStorage.removeItem(`${keyBase}:email`);
+                localStorage.removeItem(`${keyBase}:ts`);
               }
-            })();
+            } else {
+              // jika user login tapi bukan akun yang auto-dibuat, jangan tampilkan modal
+              // hapus flag agar tidak mengganggu lagi (opsional)
+              localStorage.removeItem(`${keyBase}:auto`);
+              // keep email for diagnostics if you want
+            }
+          } else {
+            // tidak ada session (guest), hanya tampilkan jika order sudah berstatus paid
+            if (orderPaidOrSuccess) {
+              // butuh verify: backend mengembalikan access_token saat auto create, tapi jika tidak,
+              // kita bisa tampilkan modal tapi ketika user submits set-password, backend akan return 401.
+              setShowSetPwModal(true);
+              localStorage.removeItem(`${keyBase}:auto`);
+              localStorage.removeItem(`${keyBase}:email`);
+              localStorage.removeItem(`${keyBase}:ts`);
+            }
           }
+        } catch (e) {
+          console.warn("set-pw check failed", e);
         }
-      }
-    } catch {}
+      })();
+    } catch (e) {
+      console.warn("flag check error", e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, order, searchParams]);
 

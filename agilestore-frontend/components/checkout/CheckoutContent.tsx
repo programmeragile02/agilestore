@@ -1534,20 +1534,35 @@ export default function CheckoutContent() {
         toast({ title: makeT(lang).t("accountCreated") });
       }
 
-      const orderId = resp?.order_id;
-      if (orderId && typeof window !== "undefined") {
-        try {
-          localStorage.setItem(`agile:setpw:order:${orderId}`, "1");
-          localStorage.setItem(
-            `agile:setpw:order:${orderId}:email`,
-            checkoutData.contact.email || ""
-          );
-          localStorage.setItem(
-            `agile:setpw:order:${orderId}:ts`,
-            String(Date.now())
-          );
-        } catch (e) {
-          console.warn("localStorage set failed", e);
+      const orderId = resp?.order_id ?? null;
+
+      // --- hanya simpan flag kalau guest dan backend BELOM memberikan akun => auto-created OR access_token returned ---
+      if (!customerAuthenticated && orderId) {
+        const autoCreated = Boolean(
+          resp?.account_created || resp?.access_token
+        );
+        if (autoCreated) {
+          try {
+            localStorage.setItem(`agile:setpw:order:${orderId}:auto`, "1"); // INDICATOR: auto-create
+            localStorage.setItem(
+              `agile:setpw:order:${orderId}:email`,
+              checkoutData.contact.email ?? ""
+            );
+            localStorage.setItem(
+              `agile:setpw:order:${orderId}:ts`,
+              String(Date.now())
+            );
+          } catch (e) {
+            console.warn("setpw localStorage failed", e);
+          }
+        } else {
+          // bersihkan kemungkinan flag lama untuk order yg sama
+          try {
+            localStorage.removeItem(`agile:setpw:order:${orderId}`);
+            localStorage.removeItem(`agile:setpw:order:${orderId}:auto`);
+            localStorage.removeItem(`agile:setpw:order:${orderId}:email`);
+            localStorage.removeItem(`agile:setpw:order:${orderId}:ts`);
+          } catch {}
         }
       }
 
