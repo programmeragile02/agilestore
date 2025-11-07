@@ -100,6 +100,7 @@ type ProductDetail = {
     }>;
   }>;
   durations: Array<{
+    id: number;
     code: string;
     name: string;
     length: number; // months
@@ -107,6 +108,11 @@ type ProductDetail = {
     is_default: boolean;
   }>;
 };
+
+type PriceMap = Record<
+  string,
+  Record<number, { price: number; discount: number }>
+>;
 
 export interface CheckoutData {
   contact: {
@@ -314,27 +320,88 @@ function resolveDurationCode(detail: ProductDetail | null, months: number) {
   );
   return hit?.code || ""; // "M1" | "M6" | "M12"
 }
+// function buildPriceMap(detail: ProductDetail) {
+//   const sortedDurations = [...(detail.durations || [])].sort(
+//     (a, b) => a.length - b.length
+//   );
+//   const map: Record<string, Record<number, number>> = {};
+//   for (const pkg of detail.packages || []) {
+//     const sortedPrices = [...(pkg.pricelist || [])]
+//       .map((pl) => ({ raw: pl, priceNum: Number.parseFloat(pl.price) }))
+//       .sort((a, b) => a.priceNum - b.priceNum);
+//     const m: Record<number, number> = {};
+//     for (let i = 0; i < sortedDurations.length; i++) {
+//       const d = sortedDurations[i];
+//       const priceEntry = sortedPrices[i];
+//       if (d && priceEntry) m[d.length] = priceEntry.priceNum;
+//     }
+//     map[pkg.package_code] = m;
+//   }
+//   return map;
+// }
+
+// Durasi -> label sesuai bahasa UI
+
 function buildPriceMap(detail: ProductDetail) {
-  const sortedDurations = [...(detail.durations || [])].sort(
-    (a, b) => a.length - b.length
-  );
-  const map: Record<string, Record<number, number>> = {};
+  // map: package_code => { [durationMonths]: { price, discount } }
+  const map: Record<
+    string,
+    Record<number, { price: number; discount: number }>
+  > = {};
+
+  // buat map id -> length jika durations punya id
+  const durationsById = new Map<string | number, number>();
+  for (const d of detail.durations || []) {
+    if ((d as any).id != null)
+      durationsById.set(String((d as any).id), d.length);
+  }
+
   for (const pkg of detail.packages || []) {
-    const sortedPrices = [...(pkg.pricelist || [])]
-      .map((pl) => ({ raw: pl, priceNum: Number.parseFloat(pl.price) }))
-      .sort((a, b) => a.priceNum - b.priceNum);
-    const m: Record<number, number> = {};
-    for (let i = 0; i < sortedDurations.length; i++) {
-      const d = sortedDurations[i];
-      const priceEntry = sortedPrices[i];
-      if (d && priceEntry) m[d.length] = priceEntry.priceNum;
+    const m: Record<number, { price: number; discount: number }> = {};
+
+    // isi dari pricelist
+    for (const pl of pkg.pricelist || []) {
+      const priceNum = Number.parseFloat(pl.price) || 0;
+      const discountNum = Number.parseFloat(pl.discount) || 0;
+
+      // coba cocokkan duration via duration_id (paling akurat)
+      let durLen: number | undefined = undefined;
+      if (pl.duration_id != null && durationsById.has(String(pl.duration_id))) {
+        durLen = durationsById.get(String(pl.duration_id));
+      }
+
+      // fallback: coba cocokan duration_code ke salah satu duration.code
+      if (durLen == null && pl.duration_code != null) {
+        const found = (detail.durations || []).find(
+          (d) =>
+            String(d.code) === String(pl.duration_code) ||
+            String(d.length) === String(pl.duration_code)
+        );
+        if (found) durLen = found.length;
+      }
+
+      // fallback terakhir: isi first-unfilled duration
+      if (durLen == null) {
+        const unfilled = (detail.durations || [])
+          .map((d) => d.length)
+          .find((L) => m[L] == null);
+        durLen = unfilled;
+      }
+
+      if (durLen != null) {
+        m[durLen] = {
+          price: Math.round(priceNum),
+          discount: Math.round(discountNum),
+        };
+      }
     }
+
     map[pkg.package_code] = m;
   }
+
   return map;
 }
 
-// Durasi -> label sesuai bahasa UI
 function durationLabel(months: number, lang: "id" | "en") {
   if (lang === "id") return months === 1 ? "1 Bulan" : `${months} Bulan`;
   return months === 1 ? "1 Month" : `${months} Months`;
@@ -537,7 +604,7 @@ function ContactInformation({
 
               {/* Mask putih menutup teks default Google, ikon kiri tetap tampil */}
               <div
-                className="pointer-events-none absolute top-0 bottom-0 right-0 rounded-full bg-white"
+                className="pointer-events-none absolute top-0 bottom-0 right-0 rounded-full mt-1 bg-white h-8 mr-2"
                 style={{ left: 44, zIndex: 2 }}
               />
 
@@ -574,7 +641,7 @@ function PlanDuration({
   data: CheckoutData["plan"];
   products: ProductRow[];
   productDetail: ProductDetail | null;
-  priceMap: Record<string, Record<number, number>>;
+  priceMap: PriceMap;
   loading: { products: boolean; detail: boolean };
   onChange: (plan: CheckoutData["plan"]) => void;
   onChangeProduct: (productCode: string) => void;
@@ -757,7 +824,8 @@ function PlanDuration({
             {durations.map((d) => {
               const active = data.duration === d.length;
               const disabled =
-                !data.package || !(priceMap[data.package]?.[d.length] > 0);
+                !data.package ||
+                !(priceMap[data.package]?.[d.length]?.price > 0);
               return (
                 <Button
                   key={d.code}
@@ -775,8 +843,17 @@ function PlanDuration({
                   {durationLabel(d.length, lang)}
                   {!!priceMap[data.package]?.[d.length] && (
                     <span className="ml-2 text-xs opacity-80">
+                      <span className="line-through mr-1 text-xs opacity-60">
+                        Rp{" "}
+                        {(
+                          priceMap[data.package][d.length].price || 0
+                        ).toLocaleString("id-ID")}
+                      </span>
                       Rp{" "}
-                      {priceMap[data.package][d.length].toLocaleString("id-ID")}
+                      {(
+                        (priceMap[data.package][d.length].price || 0) -
+                        (priceMap[data.package][d.length].discount || 0)
+                      ).toLocaleString("id-ID")}
                     </span>
                   )}
                 </Button>
@@ -792,101 +869,101 @@ function PlanDuration({
 /* ============================================================================
    SUB-COMPONENTS: VoucherCode
 ============================================================================ */
-function VoucherCode({
-  data,
-  onChange,
-  t,
-}: {
-  data: CheckoutData["voucher"];
-  onChange: (data: CheckoutData["voucher"]) => void;
-  t: ReturnType<typeof makeT>["t"];
-}) {
-  const [inputCode, setInputCode] = useState(data.code);
-  const [isApplying, setIsApplying] = useState(false);
-  const [error, setError] = useState("");
+// function VoucherCode({
+//   data,
+//   onChange,
+//   t,
+// }: {
+//   data: CheckoutData["voucher"];
+//   onChange: (data: CheckoutData["voucher"]) => void;
+//   t: ReturnType<typeof makeT>["t"];
+// }) {
+//   const [inputCode, setInputCode] = useState(data.code);
+//   const [isApplying, setIsApplying] = useState(false);
+//   const [error, setError] = useState("");
 
-  const handleApplyVoucher = async () => {
-    if (!inputCode.trim()) return;
-    setIsApplying(true);
-    setError("");
-    await new Promise((r) => setTimeout(r, 500));
-    onChange({ code: inputCode.toUpperCase(), discount: 0 });
-    setIsApplying(false);
-  };
+//   const handleApplyVoucher = async () => {
+//     if (!inputCode.trim()) return;
+//     setIsApplying(true);
+//     setError("");
+//     await new Promise((r) => setTimeout(r, 500));
+//     onChange({ code: inputCode.toUpperCase(), discount: 0 });
+//     setIsApplying(false);
+//   };
 
-  const handleRemoveVoucher = () => {
-    setInputCode("");
-    onChange({ code: "", discount: 0 });
-    setError("");
-  };
+//   const handleRemoveVoucher = () => {
+//     setInputCode("");
+//     onChange({ code: "", discount: 0 });
+//     setError("");
+//   };
 
-  return (
-    <Card className="bg-white shadow-sm border border-gray-200">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
-          <Ticket className="h-5 w-5 text-indigo-500" />
-          {t("voucherTitle")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!data.code ? (
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder={t("voucherPH")}
-                value={inputCode}
-                onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()}
-              />
-              <Button
-                onClick={handleApplyVoucher}
-                disabled={!inputCode.trim() || isApplying}
-                className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
-              >
-                {isApplying ? t("applying") : t("apply")}
-              </Button>
-            </div>
-            {error && (
-              <div className="flex items-center gap-2 text-red-600 text-sm">
-                <X className="h-4 w-4" />
-                {error}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
-                <Check className="h-4 w-4 text-green-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-green-900">
-                    {data.code}
-                  </span>
-                  <Badge className="bg-green-100 text-green-800 border-green-200">
-                    {t("applied")}
-                  </Badge>
-                </div>
-                <p className="text-xs text-green-700">
-                  {t("voucherAppliedNote")}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRemoveVoucher}
-              className="text-green-700 hover:text-green-900 hover:bg-green-100"
-            >
-              {t("remove")}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+//   return (
+//     <Card className="bg-white shadow-sm border border-gray-200">
+//       <CardHeader className="pb-4">
+//         <CardTitle className="flex items-center gap-2 text-xl font-semibold text-gray-900">
+//           <Ticket className="h-5 w-5 text-indigo-500" />
+//           {t("voucherTitle")}
+//         </CardTitle>
+//       </CardHeader>
+//       <CardContent className="space-y-4">
+//         {!data.code ? (
+//           <div className="space-y-4">
+//             <div className="flex gap-2">
+//               <Input
+//                 placeholder={t("voucherPH")}
+//                 value={inputCode}
+//                 onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+//                 onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()}
+//               />
+//               <Button
+//                 onClick={handleApplyVoucher}
+//                 disabled={!inputCode.trim() || isApplying}
+//                 className="bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600"
+//               >
+//                 {isApplying ? t("applying") : t("apply")}
+//               </Button>
+//             </div>
+//             {error && (
+//               <div className="flex items-center gap-2 text-red-600 text-sm">
+//                 <X className="h-4 w-4" />
+//                 {error}
+//               </div>
+//             )}
+//           </div>
+//         ) : (
+//           <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+//             <div className="flex items-center gap-3">
+//               <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
+//                 <Check className="h-4 w-4 text-green-600" />
+//               </div>
+//               <div>
+//                 <div className="flex items-center gap-2">
+//                   <span className="font-medium text-green-900">
+//                     {data.code}
+//                   </span>
+//                   <Badge className="bg-green-100 text-green-800 border-green-200">
+//                     {t("applied")}
+//                   </Badge>
+//                 </div>
+//                 <p className="text-xs text-green-700">
+//                   {t("voucherAppliedNote")}
+//                 </p>
+//               </div>
+//             </div>
+//             <Button
+//               variant="ghost"
+//               size="sm"
+//               onClick={handleRemoveVoucher}
+//               className="text-green-700 hover:text-green-900 hover:bg-green-100"
+//             >
+//               {t("remove")}
+//             </Button>
+//           </div>
+//         )}
+//       </CardContent>
+//     </Card>
+//   );
+// }
 
 /* ============================================================================
    SUB-COMPONENTS: OrderSummary
@@ -903,7 +980,7 @@ function OrderSummary({
 }: {
   checkoutData: CheckoutData;
   productDetail: ProductDetail | null;
-  priceMap: Record<string, Record<number, number>>;
+  priceMap: PriceMap;
   isValid: boolean;
   isLoading: boolean;
   onPlaceOrder: () => void;
@@ -911,16 +988,23 @@ function OrderSummary({
   lang: "id" | "en";
 }) {
   const plan = checkoutData.plan;
-  const taxable = Math.max(
-    0,
-    (priceMap[plan.package]?.[plan.duration] ?? 0) -
-      (checkoutData.voucher.discount || 0)
-  );
-  const basePrice = priceMap[plan.package]?.[plan.duration] ?? 0;
-  const discount = Math.max(0, checkoutData.voucher.discount || 0);
-  const tax = plan.taxMode === "exclusive" ? Math.round(taxable * 0.11) : 0;
-  const total = Math.max(0, taxable + tax);
-
+  // const taxable = Math.max(
+  //   0,
+  //   (priceMap[plan.package]?.[plan.duration] ?? 0) -
+  //     (checkoutData.voucher.discount || 0)
+  // );
+  const priceEntry = priceMap[plan.package]?.[plan.duration] ?? {
+    price: 0,
+    discount: 0,
+  };
+  const basePrice = Math.max(0, priceEntry.price || 0); // harga asli
+  const packageDiscount = Math.max(0, priceEntry.discount || 0); // diskon paket dari pricelist
+  
+  // final price setelah diskon paket (tidak pakai voucher, tidak pakai pajak)
+  const finalPrice = Math.max(0, basePrice - packageDiscount);
+  
+  const taxable = Math.max(0, (basePrice) - (checkoutData.voucher.discount || 0));
+  
   const productName = productDetail?.product?.product_name ?? plan.product;
 
   const formatPrice = (price: number) =>
@@ -998,32 +1082,32 @@ function OrderSummary({
             </span>
           </div>
 
-          {!!discount && (
+          {!!packageDiscount && (
             <div className="flex justify-between text-sm text-green-600">
               <span>{t("discount")}</span>
-              <span>-{formatPrice(discount)}</span>
+              <span>{formatPrice(packageDiscount)}</span>
             </div>
           )}
 
-          {plan.taxMode === "exclusive" && !!tax && (
+          {/* {plan.taxMode === "exclusive" && !!tax && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">{t("tax")}</span>
               <span className="font-medium text-gray-600">
                 {formatPrice(tax)}
               </span>
             </div>
-          )}
+          )} */}
 
-          {plan.taxMode === "inclusive" && (
+          {/* {plan.taxMode === "inclusive" && (
             <div className="text-xs text-gray-500">{t("taxIncluded")}</div>
-          )}
+          )} */}
 
           <Separator />
 
           <div className="flex justify-between text-lg font-bold">
             <span className="text-gray-900">{t("total")}</span>
             <span className="bg-gradient-to-r from-indigo-500 to-blue-500 bg-clip-text text-transparent">
-              {formatPrice(total)}
+              {formatPrice(finalPrice)}
             </span>
           </div>
         </div>
@@ -1268,9 +1352,7 @@ export default function CheckoutContent() {
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(
     null
   );
-  const [priceMap, setPriceMap] = useState<
-    Record<string, Record<number, number>>
-  >({});
+  const [priceMap, setPriceMap] = useState<PriceMap>({});
   const [loading, setLoading] = useState({ products: false, detail: false });
   const [isValid, setIsValid] = useState(false);
   const [isPlacing, setIsPlacing] = useState(false);
@@ -1377,6 +1459,7 @@ export default function CheckoutContent() {
             pricelist: p?.pricelist ?? [],
           })),
           durations: (data?.durations ?? []).map((d: any) => ({
+            id: d?.id,
             code: d?.code,
             name: d?.name,
             length: Number(d?.length),
@@ -1653,13 +1736,13 @@ export default function CheckoutContent() {
                 lang={lang as "id" | "en"}
               />
 
-              <VoucherCode
+              {/* <VoucherCode
                 data={checkoutData.voucher}
                 onChange={(voucher) =>
                   setCheckoutData((prev) => ({ ...prev, voucher }))
                 }
                 t={makeT(lang).t}
-              />
+              /> */}
             </div>
 
             {/* Right Column */}

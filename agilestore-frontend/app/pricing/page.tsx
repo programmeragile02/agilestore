@@ -1,4 +1,3 @@
-// app/pricing/page.tsx
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Header } from "@/components/header";
@@ -224,6 +223,65 @@ const FEATURE_I18N: Record<string, { id: string; en: string }> = {
   },
 };
 
+/* =========================
+   Lifetime (manual card)
+========================= */
+const LIFETIME_TEXT = {
+  id: {
+    title: "Lifetime",
+    badge: "Sekali Bayar",
+    desc: "Akses selamanya dengan satu kali pembayaran. Cocok untuk instansi yang ingin biaya tetap tanpa langganan bulanan",
+    cta: "Hubungi Kami",
+    featuresTitle: "Fitur termasuk",
+  },
+  en: {
+    title: "Lifetime",
+    badge: "One-time Payment",
+    desc: "Lifetime access with a single upfront payment. Perfect for teams that prefer fixed cost without monthly subscriptions",
+    cta: "Contact Us",
+    featuresTitle: "Included features",
+  },
+} as const;
+
+const LIFETIME_FEATURES = {
+  id: [
+    "Setting Whatsapp Sender",
+    "Kirim Notif Whatsapp",
+    "Manajemen Akses Role",
+    "Export Excel",
+    "Unduh Tagihan",
+    "Unduh Kwitansi",
+    "Monitoring Keuangan",
+    "Dashboard & KPI",
+    "KPI",
+    "Hirarki",
+    "Rekonsiliasi",
+    "Peta Pemakaian Air",
+    "Setting Logo",
+    "Unlimited Pelanggan",
+    "Unlimited Blok",
+    "Unlimited Tandon",
+  ],
+  en: [
+    "Setting Whatsapp Sender",
+    "Kirim Notif Whatsapp",
+    "Manajemen Akses Role",
+    "Export Excel",
+    "Unduh Tagihan",
+    "Unduh Kwitansi",
+    "Monitoring Keuangan",
+    "Dashboard & KPI",
+    "KPI",
+    "Hirarki",
+    "Rekonsiliasi",
+    "Peta Pemakaian Air",
+    "Setting Logo",
+    "Unlimited Pelanggan",
+    "Unlimited Blok",
+    "Unlimited Tandon",
+  ],
+} as const;
+
 function featureLabelByCode(
   code: string,
   fallbackName: string | undefined,
@@ -333,7 +391,7 @@ export default async function PricingPage({
         {/* ===== PACKAGES GRID ===== */}
         <section className="py-12 sm:py-16 bg-white">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-8 md:grid-cols-3 max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-stretch gap-8 max-w-7xl mx-auto">
               {pkgsSorted.map((pkg, idx) => {
                 const pkgId = pkg.pricelist?.[0]?.package_id as
                   | number
@@ -395,9 +453,9 @@ export default async function PricingPage({
                   >
                     {popular && (
                       <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                        <Badge className="bg-gradient-to-r from-blue-600 to-violet-600 text-white px-4 py-1 shadow">
+                        <span className="inline-flex whitespace-nowrap bg-gradient-to-r from-blue-600 to-violet-600 text-white px-3 py-1 rounded-full text-xs sm:text-sm font-semibold shadow">
                           {T.mostPopular}
-                        </Badge>
+                        </span>
                       </div>
                     )}
 
@@ -406,14 +464,60 @@ export default async function PricingPage({
                         {pkg.name}
                       </h3>
 
-                      <div className="flex items-baseline justify-center gap-1 mt-3">
-                        <span className="text-4xl font-extrabold text-slate-900">
-                          {priceBlock ? priceBlock.priceText : "—"}
-                        </span>
-                        <span className="text-slate-600">
-                          {priceBlock ? priceBlock.periodText : ""}
-                        </span>
-                      </div>
+                      {monthly ? (
+                        (() => {
+                          const orig = formatPriceFromIDR(
+                            normalizePriceToNumber(monthly.price),
+                            locale,
+                            usdRate
+                          );
+                          const fin = formatPriceFromIDR(
+                            normalizePriceToNumber(monthly.final),
+                            locale,
+                            usdRate
+                          );
+                          const hasDiscount = Number(monthly.discount) > 0;
+                          return (
+                            <div className="mt-3">
+                              {hasDiscount ? (
+                                <>
+                                  {/* Harga awal: nominal + /bulan dicoret SAKALIGUS dan diberi warna merah */}
+                                  <div className="text-center">
+                                    <span className="text-sm font-medium text-red-600 line-through">
+                                      {orig.priceText} {orig.periodText}
+                                    </span>
+                                  </div>
+
+                                  {/* Harga akhir setelah diskon */}
+                                  <div className="flex items-baseline justify-center gap-1 mt-1">
+                                    <span className="text-4xl font-extrabold text-slate-900">
+                                      {fin.priceText}
+                                    </span>
+                                    <span className="text-slate-600">
+                                      {fin.periodText}
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex items-baseline justify-center gap-1">
+                                  <span className="text-4xl font-extrabold text-slate-900">
+                                    {fin.priceText}
+                                  </span>
+                                  <span className="text-slate-600">
+                                    {fin.periodText}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div className="flex items-baseline justify-center gap-1 mt-3">
+                          <span className="text-4xl font-extrabold text-slate-900">
+                            —
+                          </span>
+                        </div>
+                      )}
 
                       <p className="mt-2 text-slate-600">
                         {/* deskripsi paket biarkan sesuai sumber; bisa ditambah kamus jika perlu */}
@@ -425,31 +529,31 @@ export default async function PricingPage({
                           : pkg.description ?? ""}
                       </p>
 
-                      {monthly && Number(monthly.discount) > 0 && (
+                      {/* {monthly && Number(monthly.discount) > 0 && (
                         <p className="mt-1 text-xs text-emerald-600">
                           {locale === "id" ? "Diskon" : "Discount"}{" "}
                           {discountText}{" "}
                           {locale === "id" ? "diterapkan" : "applied"}
                         </p>
-                      )}
+                      )} */}
                     </div>
 
                     <div className="px-6 pt-0 pb-6 flex flex-col flex-1">
                       <ul className="space-y-3 mb-6">
-                        {enabledLabels.slice(0, 7).map((label) => (
+                        {enabledLabels.map((label) => (
                           <li key={label} className="flex items-center gap-3">
                             <Check className="h-5 w-5 text-emerald-600" />
                             <span className="text-slate-700">{label}</span>
                           </li>
                         ))}
-                        {enabledLabels.length > 7 && (
+                        {/* {enabledLabels.length > 7 && (
                           <li className="text-sm text-slate-500">
                             + {enabledLabels.length - 7}{" "}
                             {locale === "id"
                               ? "fitur lainnya"
                               : "more features"}
                           </li>
-                        )}
+                        )} */}
                       </ul>
 
                       <div className="mt-auto">
@@ -483,6 +587,68 @@ export default async function PricingPage({
                   </div>
                 );
               })}
+
+              {/* ===== Lifetime Manual Card (no price) ===== */}
+              {(() => {
+                const LT = LIFETIME_TEXT[locale];
+                const FEAT = LIFETIME_FEATURES[locale];
+
+                return (
+                  <div className="relative bg-gradient-to-br from-blue-600 to-violet-600 rounded-2xl text-white shadow-xl border border-transparent flex flex-col h-full">
+                    {/* Badge aman (nowrap) */}
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                      <span className="inline-flex whitespace-nowrap px-3 py-1 rounded-full text-xs sm:text-sm font-semibold bg-violet-600 backdrop-blur border border-white/30 shadow">
+                        {LT.badge}
+                      </span>
+                    </div>
+
+                    {/* Heading + deskripsi (font lebih kecil) */}
+                    <div className="pt-8 px-6 pb-4 text-center">
+                      <h3 className="text-xl sm:text-2xl font-bold">
+                        {LT.title}
+                      </h3>
+
+                      <div className="mt-3 flex flex-col items-center gap-1">
+                        <div className="text-[11px] sm:text-xs font-medium tracking-wide text-white/80 uppercase">
+                          {locale === "id"
+                            ? "Akses Selamanya"
+                            : "Lifetime Access"}
+                        </div>
+                        <p className="text-sm sm:text-base text-white/90 max-w-[300px] mx-auto leading-relaxed">
+                          {LT.desc}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Fitur + CTA */}
+                    <div className="px-6 pt-0 pb-6 flex-1 flex flex-col">
+                      <div className="border-t border-white/20 pt-4">
+                        <div className="text-xs sm:text-sm font-semibold mb-3 text-white/90">
+                          {LT.featuresTitle}
+                        </div>
+                        <ul className="grid grid-cols-1 gap-2">
+                          {FEAT.map((label, i) => (
+                            <li key={i} className="flex items-center gap-2">
+                              <Check className="w-4 h-4 text-white flex-shrink-0" />
+                              <span className="text-white/95">{label}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <Link href="/contact" className="block mt-4">
+                          <Button
+                            size="lg"
+                            className="w-full bg-white text-blue-700 hover:bg-white/90"
+                          >
+                            {LT.cta}
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Mini perks row */}

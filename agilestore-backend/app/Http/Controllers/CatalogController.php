@@ -7,6 +7,7 @@ use App\Models\MstProduct;
 use App\Models\MstProductFeatures;
 use App\Models\MstProductPackage;
 use App\Models\MstDuration;
+use App\Models\MstProductPricelist;
 use App\Services\AddonService;
 use Illuminate\Http\Request;
 
@@ -95,6 +96,12 @@ class CatalogController extends Controller
                 'unit',
                 'is_default',
             ]);
+        
+        $pricelists = MstProductPricelist::query()
+            ->where('product_code', $productCode)
+            ->where('deleted_at', null)
+            ->get()
+            ;
 
         // 4) matrik paket fitur
         $matrixPackage = MstPackageMatrix::query()
@@ -112,6 +119,7 @@ class CatalogController extends Controller
                 'product'   => $product,
                 'packages'  => $packages,
                 'durations' => $durations,
+                'pricelists' => $pricelists,
                 'package_matrix' => $matrixPackage,
                 'features' => $features
             ],

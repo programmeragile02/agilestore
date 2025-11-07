@@ -376,7 +376,7 @@ function ProductTopBar({
   productCode?: string;
 }) {
   const { lang } = useLanguage();
-const L = UI_STRINGS[lang as UILang];
+  const L = UI_STRINGS[lang as UILang];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-emerald-100/70 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -976,12 +976,22 @@ function ProductPricingStandalone({
 
   if (!cards.length) return null;
 
+  // const buildCheckoutHref = (c: (typeof cards)[number]) => {
+  //   const duration = c.monthlyRow.duration_code || "M1";
+  //   const price = Number(c.monthlyRow.price) || 0;
+  //   return `/checkout?product=${productCode}&package=${
+  //     c.id
+  //   }&duration=${encodeURIComponent(duration)}&price=${price}`;
+  // };
+
   const buildCheckoutHref = (c: (typeof cards)[number]) => {
     const duration = c.monthlyRow.duration_code || "M1";
-    const price = Number(c.monthlyRow.price) || 0;
+    const priceNum = Number(c.monthlyRow.price) || 0;
+    const discountNum = Number(c.monthlyRow.discount) || 0;
+    const finalPrice = Math.max(Math.round(priceNum - discountNum), 0);
     return `/checkout?product=${productCode}&package=${
       c.id
-    }&duration=${encodeURIComponent(duration)}&price=${price}`;
+    }&duration=${encodeURIComponent(duration)}&price=${finalPrice}`;
   };
 
   const handleStart = (c: (typeof cards)[number]) => {
@@ -989,6 +999,63 @@ function ProductPricingStandalone({
     // if (isLoggedIn()) router.push(href);
     // else { setPendingHref(href); setLoginOpen(true); }
     router.push(href);
+  };
+
+  // --- i18n Lifetime (di dalam file, sebelum return ProductPricingStandalone)
+  const LIFETIME_TEXT = {
+    id: {
+      title: "Lifetime",
+      badge: "Sekali Bayar",
+      desc: "Akses selamanya dengan satu kali pembayaran. Cocok untuk instansi yang ingin biaya tetap tanpa langganan bulanan.",
+      cta: "Hubungi Kami",
+      featuresTitle: "Fitur termasuk",
+    },
+    en: {
+      title: "Lifetime",
+      badge: "One-time Payment",
+      desc: "Lifetime access with a single upfront payment. Perfect if you prefer a fixed cost without monthly subscriptions.",
+      cta: "Contact Us",
+      featuresTitle: "Included features",
+    },
+  } as const;
+
+  const LIFETIME_FEATURES: Record<"id" | "en", string[]> = {
+    id: [
+      "Dashboard & KPI",
+      "Export Excel",
+      "Hirarki",
+      "Kirim Notif Whatsapp",
+      "KPI",
+      "Unlimited Blok",
+      "Unlimited Pelanggan",
+      "Unlimited Tandon",
+      "Manajemen Akses Role",
+      "Monitoring Keuangan",
+      "Peta Pemakaian Air",
+      "Rekonsiliasi",
+      "Setting Logo",
+      "Setting Whatsapp Sender",
+      "Unduh Kwitansi",
+      "Unduh Tagihan",
+    ],
+    en: [
+      "Dashboard & KPI",
+      "Export Excel",
+      "Hirarki",
+      "Kirim Notif Whatsapp",
+      "KPI",
+      "Unlimited Blok",
+      "Unlimited Pelanggan",
+      "Unlimited Tandon",
+      "Manajemen Akses Role",
+      "Monitoring Keuangan",
+      "Peta Pemakaian Air",
+      "Rekonsiliasi",
+      "Setting Logo",
+      "Setting Whatsapp Sender",
+      "Unduh Kwitansi",
+      "Unduh Tagihan",
+    ],
   };
 
   return (
@@ -1000,7 +1067,7 @@ function ProductPricingStandalone({
             <p className="text-lg text-gray-600">{subtitle}</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 mb-12">
             {cards.map((c) => {
               const { text, suffix } = formatDisplayPrice(c.monthlyRow.price);
               return (
@@ -1025,12 +1092,55 @@ function ProductPricingStandalone({
                       </p>
                     ) : null}
                     <div className="mt-6">
-                      <div className="flex items-baseline justify-center">
-                        <span className="text-4xl font-bold text-gray-900">
-                          {text}
-                        </span>
-                        <span className="text-gray-600 ml-1">{suffix}</span>
-                      </div>
+                      {(() => {
+                        const priceNum = Number(c.monthlyRow.price) || 0;
+                        const discountNum = Number(c.monthlyRow.discount) || 0;
+                        const finalNum = Math.max(priceNum - discountNum, 0);
+
+                        const orig = formatDisplayPrice(priceNum);
+                        const fin = formatDisplayPrice(finalNum);
+
+                        const hasDiscount = discountNum > 0;
+
+                        if (hasDiscount) {
+                          return (
+                            <>
+                              {/* Harga awal (nominal + /bulan) dicoret sekali dan berwarna merah, tetap satu baris */}
+                              <div className="text-center">
+                                <span className="text-sm font-medium text-red-600 line-through whitespace-nowrap">
+                                  {orig.text}
+                                  {"\u00A0"}
+                                  <span className="text-sm text-red-600">
+                                    {orig.suffix}
+                                  </span>
+                                </span>
+                              </div>
+
+                              {/* Harga akhir setelah diskon */}
+                              <div className="flex items-baseline justify-center gap-1 mt-1">
+                                <span className="text-3xl font-bold text-gray-900">
+                                  {fin.text}
+                                </span>
+                                <span className="text-gray-600">
+                                  {fin.suffix}
+                                </span>
+                              </div>
+                            </>
+                          );
+                        }
+
+                        // Tidak ada diskon: tampilkan seperti biasa
+                        return (
+                          <div className="flex items-baseline justify-center">
+                            <span className="text-4xl font-bold text-gray-900">
+                              {orig.text}
+                            </span>
+                            <span className="text-gray-600 ml-1">
+                              {orig.suffix}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
@@ -1061,6 +1171,59 @@ function ProductPricingStandalone({
                 </Card>
               );
             })}
+
+            {/* === Lifetime (manual) === */}
+            {(() => {
+              const L = LIFETIME_TEXT[lang];
+              const FEAT = LIFETIME_FEATURES[lang];
+
+              return (
+                <Card className="relative overflow-visible rounded-2xl border-0 shadow-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+                  {/* badge DI DALAM kartu + ruang aman */}
+                  <span className="absolute left-1/2 -translate-x-1/2 -top-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-teal-600 backdrop-blur border border-white/30 shadow">
+                    {L.badge}
+                  </span>
+
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="text-xl font-bold text-white">
+                      {L.title}
+                      <div className="mt-4 text-center text-xs uppercase tracking-wide text-white/80">
+                        {lang === "id" ? "Akses Selamanya" : "Lifetime Access"}
+                      </div>
+                    </CardTitle>
+                    <p className="mt-2 text-sm text-white/90">{L.desc}</p>
+                  </CardHeader>
+
+                  <CardContent className="pt-0">
+                    <Button
+                      asChild
+                      size="lg"
+                      className="w-full mt-3 bg-white text-teal-700 hover:bg-white/90"
+                    >
+                      <Link href="/contact">
+                        {L.cta} <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+
+                    <div className="mt-6">
+                      {/* <div className="text-sm font-semibold mb-3 text-white/90">
+                        {L.featuresTitle}
+                      </div> */}
+                      <ul className="space-y-3">
+                        {FEAT.map((label, i) => (
+                          <li key={i} className="flex items-start">
+                            <Check className="h-5 w-5 text-white mr-3 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm text-white/95">
+                              {label}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </div>
 
           {/* <div className="text-center">
