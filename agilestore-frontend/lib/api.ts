@@ -373,6 +373,41 @@ export type CreateOrderResponse = {
   status: string;
 };
 
+// === RENEW PREVIEW ===
+export type RenewPreviewResponse = {
+  currency: string;
+  period: { start_date: string | null; end_date: string | null };
+  include_addons_now: boolean;
+  base: {
+    original: number;
+    discount_amount: number;
+    final: number;
+    pricelist_item_id?: number | null;
+  };
+  addons: {
+    lines: Array<{ feature_code: string; name: string; amount: number }>;
+    total: number;
+  };
+  total_payable: number;
+  product: { code: string; name?: string | null };
+  package: { code: string; name?: string | null };
+  duration: { code: string; name?: string | null };
+};
+
+/** GET /api/orders/renew/preview (auth required) */
+export async function getRenewPreview(params: {
+  product_code: string;
+  package_code: string;
+  duration_code: string;
+  base_order_id?: string;
+}): Promise<RenewPreviewResponse> {
+  const { data } = await api.get("orders/renew/preview", { params });
+  if (data?.success === false) {
+    throw new Error(data?.message || "Failed to get renew preview");
+  }
+  return data.data as RenewPreviewResponse;
+}
+
 /**
  * Check if a product is already active for the current customer (auth)
  * or for a given guest email (when not authenticated).
@@ -636,8 +671,6 @@ export async function downloadInvoice(orderId: string): Promise<Blob> {
   );
   return data as Blob;
 }
-
-// Agile Store Setting
 // lib/api.ts (atau di file yang sama dengan cuplikanmu)
 // export type AgileStoreSectionResp<T = any> = {
 //   id?: number;
@@ -745,7 +778,7 @@ function unwrapSection(resp: any, key: string): AgileStoreSectionResp {
     null;
 
   // ⬇ parse jika string JSON
-  const content    = parseMaybeJSON(rawContent)    ?? rawContent ?? null;
+  const content = parseMaybeJSON(rawContent) ?? rawContent ?? null;
   const content_en = parseMaybeJSON(rawContentEn) ?? rawContentEn ?? null;
 
   // items (kalau ada disisipkan di dalam content / content_en)
@@ -784,7 +817,7 @@ export function pickLocale<T = any>(
 
   if (locale === "en") {
     const c =
-      (section as any).content_en ??               // kolom content_en (sudah diparse)
+      (section as any).content_en ?? // kolom content_en (sudah diparse)
       (section.content && (section.content as any).en) ?? // fallback jika API model lama
       null;
 

@@ -71,8 +71,11 @@ Route::post('/orders', [OrderController::class, 'purchase'])
 Route::middleware('auth:customer-api')->group(function () {
     // Renewal (Perpanjangan durasi)
     Route::post('/orders/renew', [OrderController::class, 'renew']);
+    Route::get('/orders/renew/preview', [OrderController::class, 'renewPreview']);
+
     // Upgrade paket
     Route::post('/orders/upgrade', [OrderController::class, 'upgrade']);
+    
     // Add On
     Route::post('/orders/addon',    [OrderController::class, 'addon']);
 

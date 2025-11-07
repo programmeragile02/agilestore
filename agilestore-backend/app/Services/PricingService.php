@@ -87,33 +87,6 @@ class PricingService
                     'base_order_id' => 'Order dasar untuk upgrade tidak valid.',
                 ]);
             }
-
-            // kalau misal pakai prorata
-            // // Hitung nilai sisa masa aktif (pro-rata harian dari TOTAL base)
-            // // start/end di model dicast ke 'date' → Carbon
-            // $today      = now()->startOfDay();
-            // $baseStart  = $base->start_date?->copy()->startOfDay();
-            // $baseEnd    = $base->end_date?->copy()->startOfDay();
-
-            // if ($baseStart && $baseEnd && $baseEnd->gte($baseStart)) {
-            //     // Total hari original (inklusif)
-            //     $totalDaysOriginal = $baseStart->diffInDays($baseEnd) + 1;
-
-            //     // Sisa hari mulai hari ini (inklusif), kalau sudah lewat → 0
-            //     $remainingDays = $baseEnd->gte($today)
-            //         ? ($today->diffInDays($baseEnd) + 1)
-            //         : 0;
-
-            //     if ($totalDaysOriginal > 0 && $remainingDays > 0) {
-            //         $baseTotal = (float) $base->total; // gunakan total yang dibayar
-            //         $perDay    = $baseTotal / $totalDaysOriginal;
-            //         $prorationCredit = round($perDay * $remainingDays, 2);
-            //         // Jangan pernah melebihi total harga baru
-            //         if ($prorationCredit > $price) {
-            //             $prorationCredit = $price;
-            //         }
-            //     }
-            // }
         }
 
         // Subtotal sebelum credit

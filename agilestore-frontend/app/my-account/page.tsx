@@ -113,6 +113,7 @@ type Keys =
   | "intent.renew"
   | "intent.upgrade"
   | "intent.purchase"
+  | "intent.addon"
   | "renewal.title"
   | "renewal.subtitle"
   | "profile.title"
@@ -205,6 +206,7 @@ export const I18N: Record<Lang, Record<Keys, string>> = {
     "intent.renew": "Renewal",
     "intent.upgrade": "Upgrade Package",
     "intent.purchase": "Purchase",
+    "intent.addon": "Add-on",
     "renewal.title": "Renewal & Upgrade",
     "renewal.subtitle": "Renew your subscriptions or upgrade to higher plans.",
     "profile.title": "Profile & Account Settings",
@@ -299,6 +301,7 @@ export const I18N: Record<Lang, Record<Keys, string>> = {
     "intent.renew": "Perpanjangan",
     "intent.upgrade": "Upgrade Paket",
     "intent.purchase": "Pembelian",
+    "intent.addon": "Add-on",
     "renewal.title": "Perpanjang & Upgrade",
     "renewal.subtitle":
       "Perpanjang langganan atau upgrade ke paket lebih tinggi.",
@@ -482,11 +485,14 @@ export default function MyAccountPage() {
   // Intent label
   function formatIntent(intent?: string): string {
     if (!intent) return "";
+    const v = intent.toLowerCase();
     const key =
-      intent.toLowerCase() === "renew"
+      v === "renew"
         ? "intent.renew"
-        : intent.toLowerCase() === "upgrade"
+        : v === "upgrade"
         ? "intent.upgrade"
+        : v === "addon" || v === "add_on" || v === "add-ons" || v === "addons"
+        ? "intent.addon"
         : "intent.purchase";
     return t(key as Keys);
   }
@@ -1488,6 +1494,18 @@ export default function MyAccountPage() {
                                   {" - "}
                                   {t("intent.upgrade")} — {invoice.package_name}
                                 </span>
+                              ) : [
+                                  "addon",
+                                  "add_on",
+                                  "add-ons",
+                                  "addons",
+                                ].includes(
+                                  (invoice.intent || "").toLowerCase()
+                                ) ? (
+                                <span className="text-sm text-slate-600">
+                                  {" - "}
+                                  {t("intent.addon")}
+                                </span>
                               ) : (
                                 <span>
                                   {" - "}
@@ -1512,7 +1530,9 @@ export default function MyAccountPage() {
                             }).format(invoice.amount || 0)}
                           </p>
                           <div className="flex items-center gap-2 mt-1">
-                            {getPaymentStatusBadge(invoice.status)}
+                            <Button variant="transparent" hidden={invoice.intent === "addon"}>
+                              {getPaymentStatusBadge(invoice.status)}
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1526,6 +1546,7 @@ export default function MyAccountPage() {
                                 downloadingInvId === invoice.order_id ||
                                 invoice.status !== "paid"
                               }
+                              hidden={invoice.intent === "addon"}
                               aria-busy={downloadingInvId === invoice.order_id}
                               aria-label={`${t("downloadInvoice")} ${
                                 invoice.midtrans_order_id || invoice.order_id
@@ -1973,6 +1994,7 @@ export default function MyAccountPage() {
               productCode={ctx?.productCode || ""}
               packageCode={ctx?.packageCode || ""}
               currentDurationCode={ctx?.durationCode}
+              baseOrderId={ctx.baseOrderId}
               onConfirm={handleConfirmRenew}
               loading={processing}
             />
