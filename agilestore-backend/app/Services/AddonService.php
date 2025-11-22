@@ -168,6 +168,99 @@ class AddonService
             'name'     => 'Add-on: '.$l['name'],
         ], $lines);
     }
+
+    /** Ambil master addons aktif per product */
+    public function getMasterAddons(string $productCode): array
+    {
+        return DB::table('mst_addons')
+            ->where('product_code', $productCode)
+            ->where(function($q){ $q->whereNull('status')->orWhere('status','active'); })
+            ->get([
+                'addon_code','name','description',
+                'kind','pricing_mode','unit_label',
+                'min_qty','step_qty','max_qty',
+                'currency','unit_price',
+            ])
+            ->map(fn($r) => [
+                'addon_code'   => (string)$r->addon_code,
+                'name'         => (string)$r->name,
+                'description'  => (string)($r->description ?? ''),
+                'kind'         => (string)($r->kind ?? ''),
+                'pricing_mode' => (string)($r->pricing_mode ?? 'per_unit'),
+                'unit_label'   => (string)($r->unit_label ?? ''),
+                'min_qty'      => (int)($r->min_qty ?? 1),
+                'step_qty'     => (int)($r->step_qty ?? 1),
+                'max_qty'      => (int)($r->max_qty ?? 0),
+                'currency'     => (string)($r->currency ?? 'IDR'),
+                'unit_price'   => (int)($r->unit_price ?? 0),
+            ])
+            ->keyBy('addon_code')
+            ->all();
+    }
+
+    /**
+     * Hitung total & lines untuk master addon berdasarkan pilihan user.
+     * $selected: array of ['addon_code' => string, 'qty' => int]
+     */
+    public function computeMasterAddons(string $productCode, array $selected): array
+    {
+        $catalog = $this->getMasterAddons($productCode);
+
+        $lines = [];
+        $sum   = 0;
+
+        foreach ($selected as $row) {
+            $code = (string)($row['addon_code'] ?? '');
+            $qty  = (int)($row['qty'] ?? 0);
+            if (!$code || !isset($catalog[$code])) continue;
+
+            $a = $catalog[$code];
+
+            // Normalisasi qty terhadap min/step/max
+            $min  = max(1, (int)$a['min_qty']);
+            $step = max(1, (int)$a['step_qty']);
+            $max  = (int)$a['max_qty']; // 0=no limit
+
+            if ($qty < $min) $qty = $min;
+            // snap ke kelipatan step
+            if ($qty % $step !== 0) {
+                $qty = (int)(floor($qty / $step) * $step);
+                if ($qty < $min) $qty = $min;
+            }
+            if ($max > 0 && $qty > $max) $qty = $max;
+
+            // Pricing — mulai dari mode umum: per_unit
+            $unit = (int)$a['unit_price'];
+            $amount = 0;
+            switch (strtolower($a['pricing_mode'] ?? 'per_unit')) {
+                case 'flat':
+                    $amount = (int)$unit; // qty diabaikan
+                    $qty = max($qty, 1);
+                    break;
+                case 'per_unit':
+                default:
+                    $amount = (int)($unit * $qty);
+                    break;
+            }
+
+            if ($amount <= 0) continue;
+
+            $lines[] = [
+                'addon_code'   => $code,
+                'name'         => $a['name'],
+                'qty'          => $qty,
+                'unit_label'   => $a['unit_label'],
+                'unit_price'   => (int)$a['unit_price'],
+                'pricing_mode' => $a['pricing_mode'],
+                'kind'         => $a['kind'],
+                'currency'     => $a['currency'],
+                'amount'       => $amount,
+            ];
+            $sum += $amount;
+        }
+
+        return ['total' => (int)$sum, 'lines' => $lines, 'catalog' => $catalog];
+    }
 }
 
 // namespace App\Services;

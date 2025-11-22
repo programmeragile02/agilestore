@@ -493,21 +493,23 @@ class OrderController extends Controller
     {
         $data = $req->validate([
             'product_code' => 'required|string|exists:mst_products,product_code',
-            'features'     => 'required|array|min:1',
+            'features'     => 'sometimes|array',
             'features.*'   => 'string',
+            'addons'       => 'sometimes|array',
+            'addons.*.addon_code' => 'required_with:addons|string',
+            'addons.*.qty'        => 'nullable|integer|min:1',
             'subscription_instance_id' => 'nullable|uuid',
         ]);
 
         $auth = auth('customer-api')->user(); if (!$auth) abort(401);
 
-        // ambil subscription aktif (punya durasi & end_date)
+        // subscription aktif untuk ambil paket & durasi base
         $sub = Subscription::query()
             ->where('customer_id',$auth->id)
             ->where('product_code',$data['product_code'])
             ->where('is_active',true)
             ->orderByDesc('end_date')->orderByDesc('created_at')
             ->first();
-
         if (!$sub) {
             throw ValidationException::withMessages([
                 'product_code'=>['Anda belum punya langganan aktif untuk produk ini.']
@@ -516,28 +518,51 @@ class OrderController extends Controller
 
         $instanceId = $data['subscription_instance_id']
             ?? $this->resolveInstanceIdForCustomerProduct((string)$auth->id, $data['product_code']);
-
         if (!$instanceId) {
             throw ValidationException::withMessages([
                 'subscription_instance_id'=>['Tidak bisa menemukan instance aktif untuk produk ini.']
             ]);
         }
 
-        // Resolve hierarki & total parent berbayar (tetap dipakai untuk grant)
-        $res = $svc->resolvePayableHierarchical(
-            productCode: $data['product_code'],
-            packageCode: $sub->current_package_code,
-            wanted:      $data['features'],
-            alreadyBoughtParentCodes: [] // bisa tambahkan dedup beli ulang jika perlu
-        );
+        $wantedFeatures = array_values(array_unique($data['features'] ?? []));
+        $wantedAddons   = $data['addons'] ?? [];
 
-        if (empty($res['lines'])) {
+        if (empty($wantedFeatures) && empty($wantedAddons)) {
             throw ValidationException::withMessages([
-                'features'=>['Semua pilihan sudah termasuk paket atau sudah Anda beli.']
+                'features'=>['Harus memilih minimal satu fitur atau addon.']
             ]);
         }
 
-        // === NEW: hitung billable_from_start (skip 1 siklus)
+        // ====== 1) Resolve fitur (hierarki lama) → linesFeatures
+        $linesFeatures = [];
+        $grantFeatures = [];
+        if (!empty($wantedFeatures)) {
+            $resFeat = $svc->resolvePayableHierarchical(
+                productCode: $data['product_code'],
+                packageCode: $sub->current_package_code,
+                wanted:      $wantedFeatures,
+                alreadyBoughtParentCodes: [] // bisa dedup bila perlu
+            );
+
+            // Jika semua sudah include/terbeli, resFeat['lines'] kosong
+            $linesFeatures = $resFeat['lines'];
+            $grantFeatures = $resFeat['grant_features'];
+        }
+
+        // ====== 2) Resolve master addon (qty) → linesAddons
+        $linesAddons = [];
+        if (!empty($wantedAddons)) {
+            $resAdd = $svc->computeMasterAddons($data['product_code'], $wantedAddons);
+            $linesAddons = $resAdd['lines'];
+        }
+
+        if (empty($linesFeatures) && empty($linesAddons)) {
+            throw ValidationException::withMessages([
+                'features'=>['Semua pilihan sudah termasuk paket/terbeli atau nilai tidak valid.']
+            ]);
+        }
+
+        // ====== 3) Tentukan kapan ditagih (ikut siklus berikut base)
         $today = now()->startOfDay();
         $end   = $sub->end_date ? \Carbon\Carbon::parse($sub->end_date)->startOfDay() : $today;
         $nextPeriodStart = $end->copy()->addDay()->startOfDay();
@@ -558,7 +583,7 @@ class OrderController extends Controller
             $billableFrom = $billableFrom->addMonthsNoOverflow(1);
         }
 
-        // === NEW: buat ORDER aktivasi add-on Rp0 → langsung paid & aktif
+        // ====== 4) Buat ORDER Rp0 → aktifkan sekarang (seperti sebelumnya)
         $order = new Order();
         $order->fill([
             'customer_id'    => (string)$auth->id,
@@ -570,7 +595,6 @@ class OrderController extends Controller
             'product_name'   => $sub->product_name,
             'package_code'   => $sub->current_package_code,
             'package_name'   => $sub->current_package_name,
-
             'duration_code'  => $sub->duration_code,
             'duration_name'  => $sub->duration_name,
 
@@ -581,34 +605,40 @@ class OrderController extends Controller
 
             'start_date'     => null,
             'end_date'       => null,
-            'is_active'      => true,        // aktif sekarang
-            'status'         => 'paid',      // langsung paid
+            'is_active'      => true,
+            'status'         => 'paid',
             'paid_at'        => now(),
             'intent'         => 'addon',
         ]);
+
+        // simpan meta gabungan
         $order->meta = array_merge($order->meta ?? [], [
             'subscription_instance_id' => $instanceId,
-            'features'         => $res['payable_parents'],
-            'grant_features'   => $res['grant_features'],
-            'lines'            => $res['lines'],
-            'addon_billing'    => [ // untuk transparansi FE/BE
+            'features'       => collect($linesFeatures)->pluck('feature_code')->values()->all(), // parent only
+            'grant_features' => $grantFeatures,
+            'lines'          => [
+                'features' => $linesFeatures,
+                'addons'   => $linesAddons,
+            ],
+            'addon_billing'    => [
                 'billable_from_start'  => $billableFrom->toDateString(),
                 'follow_base_duration' => true,
                 'cycle_code'           => $sub->duration_code,
             ],
         ]);
-        $order->midtrans_order_id = null; // tidak pakai Midtrans utk Rp0
+        $order->midtrans_order_id = null;
         $order->snap_token        = null;
         $order->save();
 
-        // Langsung notify warehouse (karena status 'paid')
+        // provision ke warehouse sekali (paid)
         if (!$order->provision_notified_at) {
             dispatch(new \App\Jobs\NotifyWarehouseJob((string)$order->id))
                 ->onQueue('provisioning');
         }
 
-        // Simpan daftar parent berbayar ke Store (untuk logika billing saat renew)
-        foreach ($res['lines'] as $p) {
+        // ====== 5) Simpan ke subscription_addons untuk ditagih saat renew
+        // 5a. Fitur (parent lines)
+        foreach ($linesFeatures as $p) {
             \DB::table('subscription_addons')->updateOrInsert(
                 [
                     'subscription_instance_id' => $instanceId,
@@ -630,6 +660,34 @@ class OrderController extends Controller
             );
         }
 
+        // 5b. Master Addon (qty lines)
+        foreach ($linesAddons as $row) {
+            \DB::table('subscription_addons')->updateOrInsert(
+                [
+                    'subscription_instance_id' => $instanceId,
+                    'addon_code'               => (string)$row['addon_code'],
+                ],
+                [
+                    'feature_code'         => null, // bukan fitur
+                    'feature_name'         => null,
+                    'price_amount'         => (int)$row['amount'],
+                    'currency'             => (string)($row['currency'] ?? 'IDR'),
+                    'qty'                  => (int)($row['qty'] ?? 1),
+                    'unit_price'           => (int)($row['unit_price'] ?? 0),
+                    'pricing_mode'         => (string)($row['pricing_mode'] ?? 'per_unit'),
+                    'kind'                 => (string)($row['kind'] ?? ''),
+                    'order_id'             => (string)$order->id,
+                    'midtrans_order_id'    => null,
+                    'purchased_at'         => now(),
+                    'billable_from_start'  => $billableFrom->toDateString(),
+                    'follow_base_duration' => 1,
+                    'cycle_code'           => $sub->duration_code,
+                    'updated_at'           => now(),
+                    'created_at'           => now(),
+                ]
+            );
+        }
+
         return response()->json(['success'=>true,'data'=>[
             'order_id'=>(string)$order->id,
             'snap_token'=>null,
@@ -639,6 +697,154 @@ class OrderController extends Controller
     }
 
     // public function addon(Request $req, AddonService $svc, MidtransService $midtrans)
+    // {
+    //     $data = $req->validate([
+    //         'product_code' => 'required|string|exists:mst_products,product_code',
+    //         'features'     => 'required|array|min:1',
+    //         'features.*'   => 'string',
+    //         'subscription_instance_id' => 'nullable|uuid',
+    //     ]);
+
+    //     $auth = auth('customer-api')->user(); if (!$auth) abort(401);
+
+    //     // ambil subscription aktif (punya durasi & end_date)
+    //     $sub = Subscription::query()
+    //         ->where('customer_id',$auth->id)
+    //         ->where('product_code',$data['product_code'])
+    //         ->where('is_active',true)
+    //         ->orderByDesc('end_date')->orderByDesc('created_at')
+    //         ->first();
+
+    //     if (!$sub) {
+    //         throw ValidationException::withMessages([
+    //             'product_code'=>['Anda belum punya langganan aktif untuk produk ini.']
+    //         ]);
+    //     }
+
+    //     $instanceId = $data['subscription_instance_id']
+    //         ?? $this->resolveInstanceIdForCustomerProduct((string)$auth->id, $data['product_code']);
+
+    //     if (!$instanceId) {
+    //         throw ValidationException::withMessages([
+    //             'subscription_instance_id'=>['Tidak bisa menemukan instance aktif untuk produk ini.']
+    //         ]);
+    //     }
+
+    //     // Resolve hierarki & total parent berbayar (tetap dipakai untuk grant)
+    //     $res = $svc->resolvePayableHierarchical(
+    //         productCode: $data['product_code'],
+    //         packageCode: $sub->current_package_code,
+    //         wanted:      $data['features'],
+    //         alreadyBoughtParentCodes: [] // bisa tambahkan dedup beli ulang jika perlu
+    //     );
+
+    //     if (empty($res['lines'])) {
+    //         throw ValidationException::withMessages([
+    //             'features'=>['Semua pilihan sudah termasuk paket atau sudah Anda beli.']
+    //         ]);
+    //     }
+
+    //     // === NEW: hitung billable_from_start (skip 1 siklus)
+    //     $today = now()->startOfDay();
+    //     $end   = $sub->end_date ? \Carbon\Carbon::parse($sub->end_date)->startOfDay() : $today;
+    //     $nextPeriodStart = $end->copy()->addDay()->startOfDay();
+
+    //     $dur = \App\Models\MstDuration::where('code', $sub->duration_code)->first();
+    //     $billableFrom = $nextPeriodStart->copy();
+    //     if ($dur) {
+    //         $len = (int) $dur->length;
+    //         $unit= strtolower((string)$dur->unit);
+    //         if (in_array($unit, ['month','months'])) {
+    //             $billableFrom = $billableFrom->addMonthsNoOverflow($len);
+    //         } elseif (in_array($unit, ['day','days'])) {
+    //             $billableFrom = $billableFrom->addDays($len);
+    //         } else {
+    //             $billableFrom = $billableFrom->addMonthsNoOverflow($len);
+    //         }
+    //     } else {
+    //         $billableFrom = $billableFrom->addMonthsNoOverflow(1);
+    //     }
+
+    //     // === NEW: buat ORDER aktivasi add-on Rp0 → langsung paid & aktif
+    //     $order = new Order();
+    //     $order->fill([
+    //         'customer_id'    => (string)$auth->id,
+    //         'customer_name'  => $auth->full_name,
+    //         'customer_email' => $auth->email,
+    //         'customer_phone' => $auth->phone,
+
+    //         'product_code'   => $sub->product_code,
+    //         'product_name'   => $sub->product_name,
+    //         'package_code'   => $sub->current_package_code,
+    //         'package_name'   => $sub->current_package_name,
+
+    //         'duration_code'  => $sub->duration_code,
+    //         'duration_name'  => $sub->duration_name,
+
+    //         'price'          => 0,
+    //         'discount'       => 0,
+    //         'total'          => 0,
+    //         'currency'       => 'IDR',
+
+    //         'start_date'     => null,
+    //         'end_date'       => null,
+    //         'is_active'      => true,        // aktif sekarang
+    //         'status'         => 'paid',      // langsung paid
+    //         'paid_at'        => now(),
+    //         'intent'         => 'addon',
+    //     ]);
+    //     $order->meta = array_merge($order->meta ?? [], [
+    //         'subscription_instance_id' => $instanceId,
+    //         'features'         => $res['payable_parents'],
+    //         'grant_features'   => $res['grant_features'],
+    //         'lines'            => $res['lines'],
+    //         'addon_billing'    => [ // untuk transparansi FE/BE
+    //             'billable_from_start'  => $billableFrom->toDateString(),
+    //             'follow_base_duration' => true,
+    //             'cycle_code'           => $sub->duration_code,
+    //         ],
+    //     ]);
+    //     $order->midtrans_order_id = null; // tidak pakai Midtrans utk Rp0
+    //     $order->snap_token        = null;
+    //     $order->save();
+
+    //     // Langsung notify warehouse (karena status 'paid')
+    //     if (!$order->provision_notified_at) {
+    //         dispatch(new \App\Jobs\NotifyWarehouseJob((string)$order->id))
+    //             ->onQueue('provisioning');
+    //     }
+
+    //     // Simpan daftar parent berbayar ke Store (untuk logika billing saat renew)
+    //     foreach ($res['lines'] as $p) {
+    //         \DB::table('subscription_addons')->updateOrInsert(
+    //             [
+    //                 'subscription_instance_id' => $instanceId,
+    //                 'feature_code'             => (string)$p['feature_code'],
+    //             ],
+    //             [
+    //                 'feature_name'         => (string)$p['name'],
+    //                 'price_amount'         => (int)$p['amount'],
+    //                 'currency'             => 'IDR',
+    //                 'order_id'             => (string)$order->id,
+    //                 'midtrans_order_id'    => null,
+    //                 'purchased_at'         => now(),
+    //                 'billable_from_start'  => $billableFrom->toDateString(),
+    //                 'follow_base_duration' => 1,
+    //                 'cycle_code'           => $sub->duration_code,
+    //                 'updated_at'           => now(),
+    //                 'created_at'           => now(),
+    //             ]
+    //         );
+    //     }
+
+    //     return response()->json(['success'=>true,'data'=>[
+    //         'order_id'=>(string)$order->id,
+    //         'snap_token'=>null,
+    //         'total'=>0,
+    //         'billable_from_start'=>$billableFrom->toDateString(),
+    //     ]], 201);
+    // }
+
     // {
     //     $data = $req->validate([
     //         'product_code' => 'required|string|exists:mst_products,product_code',
@@ -1117,7 +1323,6 @@ class OrderController extends Controller
         );
 
         // ===== Ambil ADD-ON yang ikut ditagih di renewal ini =====
-        // pakai instance id dari order sebelumnya
         $instanceId =
             data_get($baseOrder,'meta.subscription_instance_id')
             ?? $this->resolveInstanceIdForCustomerProduct($customerId, $data['product_code']);
@@ -1126,24 +1331,71 @@ class OrderController extends Controller
         $addonsTotal = 0;
 
         if ($instanceId) {
-            // Hanya tagih add-on yang sudah diaktivasi sebelumnya dan "jatuh tempo" pada awal periode baru.
+            // Siapkan map nama master add-on utk lookup
+            $addonMap = \DB::table('mst_addons')
+                ->where('product_code', $data['product_code'])
+                ->where(function($q){ $q->whereNull('status')->orWhere('status','active'); })
+                ->pluck('name', 'addon_code')
+                ->all();
+
+            // Ambil pending add-ons yang sudah jatuh tempo ditagih di awal periode baru
             $pending = \DB::table('subscription_addons')
                 ->where('subscription_instance_id', $instanceId)
                 ->where(function($q) use ($start) {
                     $q->whereNull('billable_from_start')
-                    ->orWhere('billable_from_start','<=', $start->toDateString());
+                    ->orWhere('billable_from_start','<=', optional($start)->toDateString());
                 })
-                ->get(['feature_code','feature_name','price_amount']);
+                ->get([
+                    'feature_code', 'feature_name',
+                    'addon_code',
+                    'price_amount', 'currency',
+                    'qty', 'unit_price', 'pricing_mode', 'kind',
+                ]);
 
-            foreach ($pending as $p) {
-                $amount = (int)($p->price_amount ?? 0);
-                if ($amount <= 0) continue;
+            foreach ($pending as $row) {
+                $isMaster = !empty($row->addon_code);
+                $code     = $isMaster ? (string)$row->addon_code : (string)$row->feature_code;
+
+                if ($code === '') { continue; }
+
+                // Nama:
+                $name = $isMaster
+                    ? ($addonMap[$row->addon_code] ?? $row->feature_name ?? $row->addon_code)
+                    : ($row->feature_name ?: $row->feature_code);
+
+                // Hitung amount:
+                $qty   = (int)($row->qty ?? 1);
+                $unit  = (int)($row->unit_price ?? 0);
+                $mode  = strtolower((string)($row->pricing_mode ?? 'flat'));
+                $amt   = (int)($row->price_amount ?? 0);
+
+                if ($amt <= 0) {
+                    // Fallback common:
+                    if (in_array($mode, ['per_unit','per_unit_per_cycle'], true)) {
+                        $amt = $unit * max(1, $qty);
+                    } else {
+                        $amt = $unit; // 'flat' atau kosong
+                    }
+                }
+                if ($amt <= 0) { continue; }
+
                 $addonLines[] = [
-                    'feature_code' => (string)$p->feature_code,
-                    'name'         => (string)($p->feature_name ?: $p->feature_code),
-                    'amount'       => $amount,
+                    // format baru yang seragam
+                    'code'   => $code,
+                    'kind'   => $isMaster ? 'master' : 'feature',
+                    'name'   => (string)$name,
+                    'amount' => (int)$amt,
+
+                    // kompatibilitas FE lama (optional)
+                    'feature_code' => $code,
+                    // info tambahan (optional)
+                    'qty'          => (int)($row->qty ?? 1),
+                    'unit_price'   => (int)($row->unit_price ?? 0),
+                    'pricing_mode' => (string)($row->pricing_mode ?? 'flat'),
+                    'currency'     => (string)($row->currency ?? 'IDR'),
                 ];
-                $addonsTotal += $amount;
+
+                $addonsTotal += (int)$amt;
             }
         }
 

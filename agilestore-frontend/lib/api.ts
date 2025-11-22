@@ -605,35 +605,56 @@ export async function fetchSubscriptions(params?: {
 }
 
 // ---------- ADD-ON CATALOG ----------
-// === ADD-ON CATALOG ===
-export type AddonChild = {
+
+// Bentuk union: FEATURE dan MASTER_ADDON
+export type AddonKind = "FEATURE" | "MASTER_ADDON";
+
+/** Add-on berbasis FEATURE (checkbox) */
+export type AddonFeatureItem = {
+  kind: "FEATURE";
   feature_code: string;
   name: string;
+  price_addon: number;
+  included?: boolean; // sudah termasuk paket aktif
+  purchased?: boolean; // sudah pernah dibeli
+  children?: { feature_code: string; name: string }[];
 };
 
-export type AddonItem = {
-  feature_code: string;
+/** MASTER ADDON (kuantitatif, punya qty & harga per unit) */
+export type AddonMasterItem = {
+  kind: "MASTER_ADDON";
+  addon_code: string;
   name: string;
-  menu_parent_code: string | null; // parent selalu null di response ini
-  price_addon: number;
-  included: boolean; // true jika sudah termasuk paket aktif
+  currency: string; // ex: "IDR"
+  unit_price: number; // harga per unit
+  unit_label?: string | null; // ex: "user", "slot"
+  min_qty?: number | null; // minimal pemesanan (optional)
+  step_qty?: number | null; // kelipatan qty (optional)
+  max_qty?: number | null; // maksimal qty (optional)
+  pricing_mode?: "per_unit" | "tier" | "flat" | string; // fleksibel untuk masa depan
+  included?: boolean;
   purchased?: boolean;
-  children: AddonChild[]; // <-- PASTI ada di response
 };
+
+export type AddonItem = AddonFeatureItem | AddonMasterItem;
+
+export const isFeatureItem = (x: AddonItem): x is AddonFeatureItem =>
+  x.kind === "FEATURE";
+export const isMasterItem = (x: AddonItem): x is AddonMasterItem =>
+  x.kind === "MASTER_ADDON";
 
 export type AddonCatalogResponse = {
-  product_code: string;
-  package_code: string | null;
   currency: string; // "IDR"
-  items: AddonItem[]; // parent saja
+  // opsional metadata lain dari backend dipersilakan
+  items: AddonItem[];
 };
 
-/** GET /api/catalog/addons?product_code=&package_code= */
+/** GET /api/catalog/addons?product_code=&package_code=&subscription_instance_id= */
 export async function fetchAddonCatalog(
   productCode: string,
   packageCode?: string | null,
   subscriptionInstanceId?: string | null
-) {
+): Promise<AddonCatalogResponse> {
   const { data } = await api.get("catalog/addons", {
     params: {
       product_code: productCode,
@@ -641,25 +662,104 @@ export async function fetchAddonCatalog(
       subscription_instance_id: subscriptionInstanceId ?? undefined,
     },
   });
-  if (data?.success === false)
+  if (data?.success === false) {
     throw new Error(data?.message || "Failed to fetch add-on catalog");
-  return data.data as AddonCatalogResponse;
+  }
+
+  // Normalisasi bentuk agar pasti { currency, items }
+  const root = data?.data ?? data ?? {};
+  return {
+    currency: root?.currency || "IDR",
+    items: Array.isArray(root?.items) ? root.items : [],
+  } as AddonCatalogResponse;
 }
 
-// ---------- CREATE ADD-ON ORDER ----------
+// ---------- CREATE ADD-ON ORDER (NEW) ----------
+
+/** Payload sekarang bisa kirim fitur & master add-on sekaligus */
 export type CreateAddonOrderPayload = {
   product_code: string;
-  // optional: kirim subscription_instance_id kalau kamu pakai multi-instance
-  subscription_instance_id?: string | null;
-  features: string[]; // daftar feature_code yang dipilih (hanya yg tidak included)
+  subscription_instance_id?: string | null; // untuk multi-instance
+  // pilih salah satu atau keduanya:
+  features?: string[]; // daftar FEATURE (feature_code)
+  addons?: { addon_code: string; qty: number }[]; // daftar MASTER_ADDON
 };
 
-export async function createAddonOrder(payload: CreateAddonOrderPayload) {
+/** Response fleksibel: bisa Rp0 (no snap), atau berbayar (ada snap_token) */
+export type CreateAddonOrderResponse = {
+  order_id: string;
+  snap_token?: string | null; // optional kalau total=0
+  total?: number;
+  amount?: number; // fallback nama lain dari backend
+  currency?: string;
+  billable_from_start?: string; // tanggal mulai ditagih di renewal
+};
+
+export async function createAddonOrder(
+  payload: CreateAddonOrderPayload
+): Promise<CreateAddonOrderResponse> {
   const { data } = await api.post("orders/addon", payload);
-  if (data?.success === false)
+  if (data?.success === false) {
     throw new Error(data?.message || "Failed to create add-on order");
-  return data.data as { order_id: string; snap_token: string; total: number };
+  }
+  // balikan fleksibel sesuai backend
+  return (data?.data ?? data) as CreateAddonOrderResponse;
 }
+
+// export type AddonChild = {
+//   feature_code: string;
+//   name: string;
+// };
+
+// export type AddonItem = {
+//   feature_code: string;
+//   name: string;
+//   menu_parent_code: string | null; // parent selalu null di response ini
+//   price_addon: number;
+//   included: boolean; // true jika sudah termasuk paket aktif
+//   purchased?: boolean;
+//   children: AddonChild[]; // <-- PASTI ada di response
+// };
+
+// export type AddonCatalogResponse = {
+//   product_code: string;
+//   package_code: string | null;
+//   currency: string; // "IDR"
+//   items: AddonItem[]; // parent saja
+// };
+
+// /** GET /api/catalog/addons?product_code=&package_code= */
+// export async function fetchAddonCatalog(
+//   productCode: string,
+//   packageCode?: string | null,
+//   subscriptionInstanceId?: string | null
+// ) {
+//   const { data } = await api.get("catalog/addons", {
+//     params: {
+//       product_code: productCode,
+//       package_code: packageCode ?? undefined,
+//       subscription_instance_id: subscriptionInstanceId ?? undefined,
+//     },
+//   });
+//   if (data?.success === false)
+//     throw new Error(data?.message || "Failed to fetch add-on catalog");
+//   return data.data as AddonCatalogResponse;
+// }
+
+// // ---------- CREATE ADD-ON ORDER ----------
+// export type CreateAddonOrderPayload = {
+//   product_code: string;
+//   // optional: kirim subscription_instance_id kalau kamu pakai multi-instance
+//   subscription_instance_id?: string | null;
+//   features: string[]; // daftar feature_code yang dipilih (hanya yg tidak included)
+// };
+
+// export async function createAddonOrder(payload: CreateAddonOrderPayload) {
+//   const { data } = await api.post("orders/addon", payload);
+//   if (data?.success === false)
+//     throw new Error(data?.message || "Failed to create add-on order");
+//   return data.data as { order_id: string; snap_token: string; total: number };
+// }
 
 // === INVOICE: Download PDF ===
 export async function downloadInvoice(orderId: string): Promise<Blob> {
