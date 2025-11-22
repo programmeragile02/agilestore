@@ -333,6 +333,61 @@ const FALLBACK_FINAL_CTA = {
   bullets: ["No setup fees", "Cancel anytime", "24/7 support"],
 };
 
+// PASTIKAN key feature_code DI SINI sama dengan item_id di package_matrix
+const FEATURE_LIMIT_UI: Record<
+  string, // feature_code
+  Partial<Record<string, string | number>> // package_code -> value
+> = {
+  "maksimal.pelanggan": {
+    basic: 20,
+    premium: 40,
+    professional: 70,
+  },
+  "maksimal.blok": {
+    basic: 2,
+    premium: 5,
+    professional: 10,
+  },
+  "maksimal.tandon": {
+    basic: 1,
+    premium: 3,
+    professional: 5,
+  },
+  "manajemen.akses.role": {
+    basic: 3,
+    premium: 4,
+    professional: 6,
+  },
+};
+
+function getUiFeatureLimit(
+  featureCode: string,
+  packageCode: string
+): string | null {
+  const map = FEATURE_LIMIT_UI[featureCode];
+  if (!map) return null;
+  const raw = map[packageCode];
+  if (raw == null) return null;
+  return String(raw);
+}
+
+function formatFeatureWithUiLimit(
+  code: string,
+  baseLabel: string,
+  pkgCode: string,
+  lang: Lang
+): string {
+  const v = getUiFeatureLimit(code, pkgCode);
+  if (!v) return baseLabel;
+
+  if (lang === "en") {
+    // contoh: "Max Customers: 40"
+    return `${baseLabel}: ${v}`;
+  }
+  // contoh: "Maksimal Pelanggan 40"
+  return `${baseLabel} ${v}`;
+}
+
 /* =========================
    Lifetime (manual card)
 ========================= */
@@ -1196,6 +1251,7 @@ export default async function HomePage() {
                                 )
                                   return null;
 
+                                // kumpulkan feature_code yang enabled
                                 const enabledCodes: string[] =
                                   natabanyuProduct.package_matrix
                                     .filter(
@@ -1210,24 +1266,30 @@ export default async function HomePage() {
                                 const uniqueCodes = Array.from(
                                   new Set(enabledCodes)
                                 );
-                                const enabledLabels: string[] = uniqueCodes
+
+                                // bikin objek { code, label } dengan angka limit dari UI (kalau ada)
+                                const enabledItems = uniqueCodes
                                   .map((code: string) => {
                                     const f = (
                                       natabanyuProduct.features || []
                                     ).find(
                                       (ff: any) => ff.feature_code === code
                                     );
-                                    return f?.name ?? code;
+                                    const baseLabel = f?.name ?? code;
+
+                                    return {
+                                      code,
+                                      label: formatFeatureWithUiLimit(
+                                        code,
+                                        baseLabel,
+                                        pkg.package_code, // penting: pakai package_code untuk mapping
+                                        locale
+                                      ),
+                                    };
                                   })
-                                  .filter(Boolean);
+                                  .filter((x) => !!x.label);
 
-                                if (!enabledLabels.length) return null;
-
-                                const visible = enabledLabels;
-                                // const more = Math.max(
-                                //   0,
-                                //   enabledLabels.length - visible.length
-                                // );
+                                if (!enabledItems.length) return null;
 
                                 return (
                                   <div className="border-t border-slate-100 px-2 pt-4">
@@ -1237,26 +1299,22 @@ export default async function HomePage() {
                                         : "Included features"}
                                     </div>
                                     <ul className="grid grid-cols-1 gap-2 text-md">
-                                      {visible.map(
-                                        (label: string, i: number) => (
-                                          <li
-                                            key={i}
-                                            className="flex items-center gap-2 text-slate-600"
-                                          >
-                                            <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                                            <span>{label}</span>
-                                          </li>
-                                        )
-                                      )}
+                                      {enabledItems.map((item, i: number) => (
+                                        <li
+                                          key={item.code ?? i}
+                                          className="flex items-center gap-2 text-slate-600"
+                                        >
+                                          <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                          <span>{item.label}</span>
+                                        </li>
+                                      ))}
                                     </ul>
                                     {/* {more > 0 && (
                                       <div className="mt-3 text-xs text-slate-500">
                                         +{more} fitur lainnya
                                       </div>
                                     )} */}
-                                    <Link
-                                      href={`/product/NATABANYU`}
-                                    >
+                                    <Link href={`/product/NATABANYU`}>
                                       <Button
                                         className={`w-full mt-4 ${
                                           popular

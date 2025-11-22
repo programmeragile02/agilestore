@@ -252,6 +252,61 @@ type Lang = "id" | "en";
 
 type UILang = "id" | "en";
 
+const FEATURE_LIMIT_UI: Record<
+  string, // feature_code
+  Partial<Record<string, string | number>> // package_code -> value
+> = {
+  // SESUAIKAN dengan feature_code & package_code-mu
+  "maksimal.pelanggan": {
+    basic: 20,
+    premium: 40,
+    professional: 70,
+  },
+  "maksimal.blok": {
+    basic: 2,
+    premium: 5,
+    professional: 10,
+  },
+  "maksimal.tandon": {
+    basic: 1,
+    premium: 3,
+    professional: 5,
+  },
+  "manajemen.akses.role": {
+    basic: 3,
+    premium: 4,
+    professional: 6,
+  },
+};
+
+function getUiFeatureLimit(
+  featureCode: string,
+  packageCode: string
+): string | null {
+  const map = FEATURE_LIMIT_UI[featureCode];
+  if (!map) return null;
+  const raw = map[packageCode];
+  if (raw == null) return null;
+  return String(raw);
+}
+
+function formatFeatureWithUiLimit(
+  code: string,
+  baseLabel: string,
+  pkgCode: string,
+  lang: Lang
+): string {
+  const v = getUiFeatureLimit(code, pkgCode);
+  if (!v) return baseLabel;
+
+  if (lang === "en") {
+    // contoh: "Max Customers: 40"
+    return `${baseLabel}: ${v}`;
+  }
+  // contoh: "Maksimal Pelanggan 40"
+  return `${baseLabel} ${v}`;
+}
+
 const UI_STRINGS: Record<
   UILang,
   {
@@ -949,17 +1004,32 @@ function ProductPricingStandalone({
               r.package_id === pkgId && r.item_type === "feature" && r.enabled
           );
 
-    const featureList = rows
-      .map(
-        (r) =>
-          featureNameByCode.get(r.item_id) ||
-          r.item_id
+    // jadikan {code,label} dan selipkan limit UI kalau ada
+    const featureItems = rows
+      .map((r) => {
+        const code = r.item_id;
+        const baseName =
+          featureNameByCode.get(code) ||
+          code
             .split(".")
             .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-            .join(" ")
+            .join(" ");
+
+        return {
+          code,
+          label: formatFeatureWithUiLimit(
+            code,
+            baseName,
+            pkg.package_code,
+            lang
+          ),
+        };
+      })
+      .filter(
+        (item, idx, arr) =>
+          !!item.label && arr.findIndex((x) => x.code === item.code) === idx // unique by code
       )
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .sort((a, b) => a.localeCompare(b));
+      .sort((a, b) => a.label.localeCompare(b.label));
 
     const meta = planMetaByCode.get(String(pkg.package_code).toLowerCase());
 
@@ -969,7 +1039,7 @@ function ProductPricingStandalone({
       description: meta?.description ?? pkg.description ?? "",
       popular: /premium|business/i.test(pkg.package_code),
       monthlyRow,
-      features: featureList,
+      features: featureItems, // <-- bukan lagi array string
       ctaLabel: meta?.cta ?? "Choose Plan",
     };
   });
@@ -1156,15 +1226,19 @@ function ProductPricingStandalone({
                       {c.ctaLabel} <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                     <ul className="space-y-3 text-left">
-                      {(c.features.length ? c.features : ["—"]).map(
-                        (name, i) => (
-                          <li key={i} className="flex items-start">
+                      {c.features.length ? (
+                        c.features.map((f, i) => (
+                          <li key={f.code ?? i} className="flex items-start">
                             <Check className="h-5 w-5 text-emerald-600 mr-3 mt-0.5 flex-shrink-0" />
                             <span className="text-sm text-gray-700">
-                              {name}
+                              {f.label}
                             </span>
                           </li>
-                        )
+                        ))
+                      ) : (
+                        <li className="flex items-start">
+                          <span className="text-sm text-gray-400">—</span>
+                        </li>
                       )}
                     </ul>
                   </CardContent>

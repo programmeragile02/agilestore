@@ -282,6 +282,62 @@ const LIFETIME_FEATURES = {
   ],
 } as const;
 
+// Limit per fitur per paket (UI-only, belum dari backend)
+const FEATURE_LIMIT_UI: Record<
+  string, // feature_code
+  Partial<Record<string, string | number>> // package_code -> value
+> = {
+  "maksimal.pelanggan": {
+    basic: 20,
+    premium: 40,
+    professional: 70,
+  },
+  "maksimal.blok": {
+    basic: 2,
+    premium: 5,
+    professional: 10,
+  },
+  "maksimal.tandon": {
+    basic: 1,
+    premium: 3,
+    professional: 5,
+  },
+  "manajemen.akses.role": {
+    basic: 3,
+    premium: 4,
+    professional: 6,
+  },
+};
+
+function getUiFeatureLimit(
+  featureCode: string,
+  packageCode: string
+): string | null {
+  const map = FEATURE_LIMIT_UI[featureCode];
+  if (!map) return null;
+  const raw = map[packageCode];
+  if (raw == null) return null;
+  return String(raw);
+}
+
+function formatFeatureWithUiLimit(
+  code: string,
+  baseLabel: string,
+  pkgCode: string,
+  lang: Lang
+): string {
+  const v = getUiFeatureLimit(code, pkgCode);
+  if (!v) return baseLabel;
+
+  // kalau mau beda untuk EN/ID bisa diatur di sini:
+  if (lang === "en") {
+    // contoh: "Max Customers: 500"
+    return `${baseLabel}: ${v}`;
+  }
+  // contoh: "Maksimal Pelanggan 500"
+  return `${baseLabel} ${v}`;
+}
+
 function featureLabelByCode(
   code: string,
   fallbackName: string | undefined,
@@ -402,25 +458,30 @@ export default async function PricingPage({
                 );
 
                 // fitur enabled untuk paket ini
-                const enabledCodes =
-                  data.package_matrix
-                    .filter(
-                      (m) =>
-                        m.package_id === pkgId &&
-                        m.item_type === "feature" &&
-                        m.enabled
-                    )
-                    .map((m) => m.item_id) ?? [];
-
-                const enabledLabels = enabledCodes
-                  .map((code) =>
-                    featureLabelByCode(
-                      code,
-                      data.features.find((f) => f.feature_code === code)?.name,
-                      locale
-                    )
+                const enabledItems = data.package_matrix
+                  .filter(
+                    (m) =>
+                      m.package_id === pkgId &&
+                      m.item_type === "feature" &&
+                      m.enabled
                   )
-                  .filter(Boolean) as string[];
+                  .map((m) => {
+                    const code = m.item_id;
+                    const rawName = data.features.find(
+                      (f) => f.feature_code === code
+                    )?.name;
+                    const baseLabel = featureLabelByCode(code, rawName, locale);
+
+                    return {
+                      code,
+                      label: formatFeatureWithUiLimit(
+                        code,
+                        baseLabel,
+                        pkg.package_code, // penting: pakai package_code
+                        locale
+                      ),
+                    };
+                  });
 
                 const nameLc = pkg.name.toLowerCase();
                 const popular = idx === 1 || nameLc.includes("premium");
@@ -540,10 +601,13 @@ export default async function PricingPage({
 
                     <div className="px-6 pt-0 pb-6 flex flex-col flex-1">
                       <ul className="space-y-3 mb-6">
-                        {enabledLabels.map((label) => (
-                          <li key={label} className="flex items-center gap-3">
+                        {enabledItems.map((item) => (
+                          <li
+                            key={item.code}
+                            className="flex items-center gap-3"
+                          >
                             <Check className="h-5 w-5 text-emerald-600" />
-                            <span className="text-slate-700">{label}</span>
+                            <span className="text-slate-700">{item.label}</span>
                           </li>
                         ))}
                         {/* {enabledLabels.length > 7 && (

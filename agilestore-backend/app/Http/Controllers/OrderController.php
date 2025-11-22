@@ -40,149 +40,6 @@ class OrderController extends Controller
         return $this->createOrder($req, $pricing, $midtrans, $period, 'upgrade');
     }
 
-    // private function createOrder(Request $req, PricingService $pricing, MidtransService $midtrans, PeriodService $period, string $intent)
-    // {
-    //     $data = $req->validate([
-    //         'product_code'   => 'required|string|exists:mst_products,product_code',
-    //         'package_code'   => 'required|string|exists:mst_product_packages,package_code',
-    //         'duration_code'  => 'required|string|exists:mst_durations,code',
-    //         'base_order_id'  => 'nullable|uuid|exists:orders,id',
-    //     ]);
-
-    //     $auth = auth('customer-api')->user(); if (!$auth) abort(401,'Unauthorized');
-
-    //     $baseOrder = null;
-    //     if (in_array($intent, ['renew','upgrade'])) {
-    //         $baseOrder = Order::findOrFail($data['base_order_id']);
-    //         if ((string)$baseOrder->customer_id !== (string)$auth->id) {
-    //             throw ValidationException::withMessages(['base_order_id' => 'Order lama bukan milik Anda.']);
-    //         }
-    //         if ($baseOrder->status !== 'paid') {
-    //             throw ValidationException::withMessages(['base_order_id' => 'Order lama tidak valid untuk '.$intent]);
-    //         }
-    //     }
-
-    //     if ($intent === 'renew') {
-    //         if ($baseOrder->product_code !== $data['product_code']) {
-    //             throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
-    //         }
-    //         if ($baseOrder->package_code !== $data['package_code']) {
-    //             throw ValidationException::withMessages(['package_code' => ['Renew tidak boleh ganti paket. Gunakan upgrade.']]);
-    //         }
-    //     }
-    //     if ($intent === 'upgrade') {
-    //         if ($baseOrder->product_code !== $data['product_code']) {
-    //             throw ValidationException::withMessages(['product_code' => ['Product tidak sama dengan base_order_id.']]);
-    //         }
-    //     }
-
-    //     $product = MstProduct::where('product_code',$data['product_code'])->first();
-    //     if (!$product) throw ValidationException::withMessages(['product_code'=>'Produk tidak ditemukan.']);
-
-    //     $package = MstProductPackage::where('package_code',$data['package_code'])
-    //               ->where('product_code',$data['product_code'])->first();
-    //     if (!$package) throw ValidationException::withMessages(['package_code'=>'Paket tidak sesuai produk.']);
-
-    //     $duration = MstDuration::where('code',$data['duration_code'])->first();
-    //     if (!$duration) throw ValidationException::withMessages(['duration_code'=>'Durasi tidak valid.']);
-
-    //     $today = now()->toDateString();
-    //     $lastActiveForProduct = Order::query()
-    //         ->where('customer_id', $auth->id)
-    //         ->where('product_code', $data['product_code'])
-    //         ->where('status', 'paid')
-    //         ->where('is_active', true)
-    //         ->where(fn($q)=>$q->whereNull('end_date')->orWhereDate('end_date','>=',$today))
-    //         ->orderByDesc('end_date')->first();
-
-    //     if ($intent === 'purchase' && $lastActiveForProduct) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Anda sudah memiliki langganan aktif untuk produk ini.',
-    //             'data' => [
-    //                 'existing_order_id' => (string)$lastActiveForProduct->id,
-    //                 'package_code' => $lastActiveForProduct->package_code,
-    //                 'package_name' => $lastActiveForProduct->package_name,
-    //                 'end_date' => optional($lastActiveForProduct->end_date)->toDateString(),
-    //             ],
-    //         ], 422);
-    //     }
-
-    //     ['start_date'=>$start,'end_date'=>$end] = $period->compute($intent,$baseOrder,$duration);
-
-    //     $priceInfo = $pricing->resolvePrice($data['product_code'],$data['package_code'],$data['duration_code'],$intent,$baseOrder?->id);
-    //     if (!isset($priceInfo['total'])) abort(422,'Tidak bisa menentukan harga.');
-
-    //     $subscriptionInstanceId = $intent==='purchase'
-    //         ? (string) Str::uuid()
-    //         : (data_get($baseOrder,'meta.subscription_instance_id') ?: ($lastActiveForProduct?->meta['subscription_instance_id'] ?? null));
-
-    //     $order = new Order();
-    //     $order->fill([
-    //         'customer_id'   => (string)$auth->id,
-    //         'customer_name' => $auth->full_name,
-    //         'customer_email'=> $auth->email,
-    //         'customer_phone'=> $auth->phone,
-
-    //         'product_code'  => $data['product_code'],
-    //         'product_name'  => $product->product_name ?? $data['product_code'],
-    //         'package_code'  => $data['package_code'],
-    //         'package_name'  => $package->name ?? $data['package_code'],
-    //         'duration_code' => $data['duration_code'],
-    //         'duration_name' => $duration->name ?? $data['duration_code'],
-
-    //         'pricelist_item_id'=> $priceInfo['pricelist_item_id'],
-    //         'price'            => $priceInfo['price'],
-    //         'discount'         => $priceInfo['discount'],
-    //         'total'            => $priceInfo['total'],
-    //         'currency'         => $priceInfo['currency'],
-
-    //         'start_date'   => $start,
-    //         'end_date'     => $end,
-    //         'is_active'    => false,
-    //         'status'       => 'pending',
-    //         'intent'       => $intent,
-    //         'base_order_id'=> $baseOrder?->id,
-    //     ]);
-    //     $order->save();
-
-    //     $midtransOrderId = $this->nextMidtransOrderId($product->product_code);
-
-    //     $frontend = rtrim(env('FRONTEND_URL','http://localhost:3000'),'/');
-    //     $payload = [
-    //         'transaction_details' => ['order_id'=>$midtransOrderId,'gross_amount'=>(int)round($order->total)],
-    //         'customer_details'    => ['first_name'=>$order->customer_name,'email'=>$order->customer_email,'phone'=>$order->customer_phone],
-    //         'item_details'        => [[
-    //             'id'=>$order->package_code,'price'=>(int)round($order->total),'quantity'=>1,
-    //             'name'=>"{$order->product_name} - {$order->package_name} ({$order->duration_name})",
-    //         ]],
-    //         'callbacks' => [
-    //             'finish'=>"$frontend/orders/{$order->id}?status=success",
-    //             'error' =>"$frontend/orders/{$order->id}?status=error",
-    //         ],
-    //     ];
-    //     $snapToken = app(MidtransService::class)->createSnapToken($payload);
-
-    //     $order->midtrans_order_id = $midtransOrderId;
-    //     $order->snap_token        = $snapToken;
-    //     $order->meta = array_merge($order->meta ?? [], [
-    //         'subscription_instance_id' => $subscriptionInstanceId,
-    //     ]);
-    //     $order->save();
-
-    //     return response()->json([
-    //         'success'=>true,'message'=>'Order created','data'=>[
-    //             'order_id'=>$order->id,'midtrans_order_id'=>$order->midtrans_order_id,'snap_token'=>$snapToken,
-    //             'total'=>(float)$order->total,'currency'=>$order->currency,'status'=>$order->status,'intent'=>$order->intent,
-    //             'base_order_id'=>$order->base_order_id,
-    //             'start_date'=>optional($order->start_date)->toDateString(),'end_date'=>optional($order->end_date)->toDateString(),
-    //             'product'=>['code'=>$order->product_code,'name'=>$order->product_name],
-    //             'package'=>['code'=>$order->package_code,'name'=>$order->package_name],
-    //             'duration'=>['code'=>$order->duration_code,'name'=>$order->duration_name],
-    //         ]
-    //     ],201);
-    // }
-
     private function createOrder(Request $req, PricingService $pricing, MidtransService $midtrans, PeriodService $period, string $intent)
     {
         // Base validations
@@ -338,24 +195,84 @@ class OrderController extends Controller
                     ?: ($lastActiveForProduct?->meta['subscription_instance_id'] ?? null);
 
                 if ($subscriptionInstanceId) {
-                    $billableAddons = \DB::table('subscription_addons')
+                    // Map nama master addon
+                    $addonMap = \DB::table('mst_addons')
+                        ->where('product_code', $data['product_code'])
+                        ->where(function($q){ $q->whereNull('status')->orWhere('status','active'); })
+                        ->pluck('name', 'addon_code')
+                        ->all();
+
+                    $pending = \DB::table('subscription_addons')
                         ->where('subscription_instance_id', $subscriptionInstanceId)
                         ->where(function($q) use ($start) {
                             $q->whereNull('billable_from_start')
                             ->orWhere('billable_from_start','<=',$start->toDateString());
                         })
-                        ->get(['feature_code','feature_name','price_amount'])
-                        ->map(fn($r) => [
-                            'feature_code' => (string)$r->feature_code,
-                            'name'         => (string)($r->feature_name ?: $r->feature_code),
-                            'amount'       => (int)($r->price_amount ?: 0),
-                        ])->all();
+                        ->get([
+                            'feature_code', 'feature_name',
+                            'addon_code',
+                            'price_amount', 'currency',
+                            'qty', 'unit_price', 'pricing_mode', 'kind',
+                        ]);
 
-                    foreach ($billableAddons as $al) {
-                        if (($al['amount'] ?? 0) > 0) {
-                            $addonChargeLines[] = $al;
-                            $addonChargeTotal  += (int)$al['amount'];
+                    $addonDiscountPercent = (int)($duration->addon_discount_percent ?? 0);
+
+                    foreach ($pending as $row) {
+                        $isMaster = !empty($row->addon_code);
+                        $code     = $isMaster ? (string)$row->addon_code : (string)$row->feature_code;
+
+                        if ($code === '') {
+                            continue;
                         }
+
+                        $name = $isMaster
+                            ? ($addonMap[$row->addon_code] ?? $row->feature_name ?? $row->addon_code)
+                            : ($row->feature_name ?: $row->feature_code);
+
+                        $qty   = (int)($row->qty ?? 1);
+                        $unit  = (int)($row->unit_price ?? 0);
+                        $mode  = strtolower((string)($row->pricing_mode ?? 'flat'));
+
+                        // baseAmount sebelum diskon durasi
+                        $baseAmount = (int)($row->price_amount ?? 0);
+
+                        if ($baseAmount <= 0) {
+                            if (in_array($mode, ['per_unit','per_unit_per_cycle'], true)) {
+                                $baseAmount = $unit * max(1, $qty);
+                            } else {
+                                $baseAmount = $unit;
+                            }
+                        }
+
+                        if ($baseAmount <= 0) {
+                            continue;
+                        }
+
+                        $discountPercent = $addonDiscountPercent > 0 ? $addonDiscountPercent : 0;
+                        $discountAmount  = 0;
+                        $finalAmount     = $baseAmount;
+
+                        if ($discountPercent > 0) {
+                            $discountAmount = (int) round($baseAmount * $discountPercent / 100);
+                            $finalAmount    = max(0, $baseAmount - $discountAmount);
+                        }
+
+                        // Dipakai utk invoice + Midtrans item_details
+                        $line = [
+                            'feature_code' => $code,
+                            'name'         => (string)$name,
+                            'amount'       => (int)$finalAmount,
+                        ];
+
+                        // Bisa tambahkan info extra ke meta kalau mau:
+                        // $line['base_amount']      = (int)$baseAmount;
+                        // $line['discount_percent'] = (int)$discountPercent;
+                        // $line['discount_amount']  = (int)$discountAmount;
+                        // $line['qty']              = $qty;
+                        // ...
+
+                        $addonChargeLines[] = $line;
+                        $addonChargeTotal  += (int)$finalAmount;
                     }
                 }
             }
@@ -1331,7 +1248,7 @@ class OrderController extends Controller
         $addonsTotal = 0;
 
         if ($instanceId) {
-            // Siapkan map nama master add-on utk lookup
+            // Siapkan map nama master add-on utk lookup (addon_code → name)
             $addonMap = \DB::table('mst_addons')
                 ->where('product_code', $data['product_code'])
                 ->where(function($q){ $q->whereNull('status')->orWhere('status','active'); })
@@ -1352,50 +1269,71 @@ class OrderController extends Controller
                     'qty', 'unit_price', 'pricing_mode', 'kind',
                 ]);
 
+            $addonDiscountPercent = (int)($duration->addon_discount_percent ?? 0);
+
             foreach ($pending as $row) {
                 $isMaster = !empty($row->addon_code);
                 $code     = $isMaster ? (string)$row->addon_code : (string)$row->feature_code;
 
-                if ($code === '') { continue; }
+                if ($code === '') {
+                    continue;
+                }
 
-                // Nama:
+                // Nama line: master → pakai nama dari mst_addons kalau ada
                 $name = $isMaster
                     ? ($addonMap[$row->addon_code] ?? $row->feature_name ?? $row->addon_code)
                     : ($row->feature_name ?: $row->feature_code);
 
-                // Hitung amount:
                 $qty   = (int)($row->qty ?? 1);
                 $unit  = (int)($row->unit_price ?? 0);
                 $mode  = strtolower((string)($row->pricing_mode ?? 'flat'));
-                $amt   = (int)($row->price_amount ?? 0);
 
-                if ($amt <= 0) {
-                    // Fallback common:
+                // 1) Hitung baseAmount (sebelum diskon durasi)
+                $baseAmount = (int)($row->price_amount ?? 0);
+
+                if ($baseAmount <= 0) {
                     if (in_array($mode, ['per_unit','per_unit_per_cycle'], true)) {
-                        $amt = $unit * max(1, $qty);
+                        $baseAmount = $unit * max(1, $qty);
                     } else {
-                        $amt = $unit; // 'flat' atau kosong
+                        // flat / default
+                        $baseAmount = $unit;
                     }
                 }
-                if ($amt <= 0) { continue; }
+
+                if ($baseAmount <= 0) {
+                    continue;
+                }
+
+                // 2) Hitung diskon berdasarkan duration.addon_discount_percent
+                $discountPercent = $addonDiscountPercent > 0 ? $addonDiscountPercent : 0;
+                $discountAmount  = 0;
+                $finalAmount     = $baseAmount;
+
+                if ($discountPercent > 0) {
+                    $discountAmount = (int) round($baseAmount * $discountPercent / 100);
+                    $finalAmount    = max(0, $baseAmount - $discountAmount);
+                }
 
                 $addonLines[] = [
-                    // format baru yang seragam
                     'code'   => $code,
                     'kind'   => $isMaster ? 'master' : 'feature',
                     'name'   => (string)$name,
-                    'amount' => (int)$amt,
+                    'amount' => (int)$finalAmount,
 
-                    // kompatibilitas FE lama (optional)
+                    // compat lama
                     'feature_code' => $code,
-                    // info tambahan (optional)
-                    'qty'          => (int)($row->qty ?? 1),
-                    'unit_price'   => (int)($row->unit_price ?? 0),
-                    'pricing_mode' => (string)($row->pricing_mode ?? 'flat'),
-                    'currency'     => (string)($row->currency ?? 'IDR'),
+
+                    // info tambahan
+                    'qty'               => $qty,
+                    'unit_price'        => $unit,
+                    'pricing_mode'      => $mode,
+                    'currency'          => (string)($row->currency ?? 'IDR'),
+                    'base_amount'       => (int)$baseAmount,
+                    'discount_percent'  => (int)$discountPercent,
+                    'discount_amount'   => (int)$discountAmount,
                 ];
 
-                $addonsTotal += (int)$amt;
+                $addonsTotal += (int)$finalAmount;
             }
         }
 
